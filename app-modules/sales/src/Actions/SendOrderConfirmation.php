@@ -2,16 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Kinkoza\Sales\Listeners;
+namespace Kinkoza\Sales\Actions;
 
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Queue\InteractsWithQueue;
 use Kinkoza\Sales\Events\OrderPlaced;
 use Kinkoza\Sales\Notifications\OrderConfirmation;
+use Lorisleiva\Actions\Concerns\AsAction;
 use UnexpectedValueException;
 
 class SendOrderConfirmation implements ShouldQueueAfterCommit
 {
+    use AsAction;
     use InteractsWithQueue;
 
     public int $tries = 3;
@@ -30,7 +32,7 @@ class SendOrderConfirmation implements ShouldQueueAfterCommit
         $invoiceNumber = $invoice->getAttribute('number');
 
         if (! is_string($orderNumber) || ! is_string($invoiceNumber)) {
-            throw new UnexpectedValueException('Order and invoice references must be strings.');
+            throw new UnexpectedValueException((string) __('Order and invoice references must be strings.'));
         }
 
         $buyer->notify(new OrderConfirmation(

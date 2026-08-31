@@ -7,10 +7,10 @@ use DomainException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\GetOrCreateCart;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
-use Kinkoza\Sales\Contracts\Services\CheckoutServiceInterface;
+use Kinkoza\Sales\Actions\CheckoutCart;
 use Kinkoza\Storefront\Support\CartIdentity;
 use Kinkoza\Storefront\Support\DomainErrorMessage;
 use Livewire\Attributes\Computed;
@@ -34,11 +34,9 @@ class CheckoutShow extends Component
     #[Locked]
     public int $cartVersion;
 
-    public function mount(
-        CartServiceInterface $carts,
-        CartIdentity $identity,
-    ): void {
-        $cart = $carts->getOrCreateFor(
+    public function mount(CartIdentity $identity): void
+    {
+        $cart = GetOrCreateCart::run(
             $identity->buyer(),
             $identity->guestToken(),
         );
@@ -60,14 +58,14 @@ class CheckoutShow extends Component
             ->firstOrFail();
     }
 
-    public function placeOrder(CheckoutServiceInterface $checkout): void
+    public function placeOrder(): void
     {
         $buyer = Auth::user();
 
         abort_unless($buyer instanceof User, 403);
 
         try {
-            $order = $checkout->checkout(
+            $order = CheckoutCart::run(
                 $this->cart,
                 $buyer,
                 $this->idempotencyKey,

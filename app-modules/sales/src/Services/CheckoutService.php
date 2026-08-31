@@ -7,7 +7,6 @@ namespace Kinkoza\Sales\Services;
 use App\Models\User;
 use App\Support\Database\SequenceGenerator;
 use BackedEnum;
-use DomainException;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -18,21 +17,26 @@ use Kinkoza\Cart\Exceptions\CartNotActive;
 use Kinkoza\Cart\Exceptions\CurrencyMismatch;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
+use Kinkoza\Cart\Exceptions\SelfPurchaseNotAllowed;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Models\Listing;
-use Kinkoza\Sales\Contracts\Services\CheckoutServiceInterface;
 use Kinkoza\Sales\Enums\InvoiceStatus;
 use Kinkoza\Sales\Enums\OrderStatus;
 use Kinkoza\Sales\Events\OrderPlaced;
+use Kinkoza\Sales\Exceptions\CartChangedDuringCheckout;
+use Kinkoza\Sales\Exceptions\CartOwnershipMismatch;
+use Kinkoza\Sales\Exceptions\EmptyCart;
+use Kinkoza\Sales\Exceptions\IdempotencyKeyMismatch;
+use Kinkoza\Sales\Exceptions\InvalidCartItemQuantity;
 use Kinkoza\Sales\Models\Invoice;
 use Kinkoza\Sales\Models\InvoiceItem;
 use Kinkoza\Sales\Models\Order;
 use Kinkoza\Sales\Models\OrderItem;
 use UnexpectedValueException;
 
-class CheckoutService implements CheckoutServiceInterface
+class CheckoutService
 {
     private const int TRANSACTION_ATTEMPTS = 5;
 
@@ -111,7 +115,7 @@ class CheckoutService implements CheckoutServiceInterface
                     ->get();
 
                 if ($itemReferences->isEmpty()) {
-                    throw new DomainException('An empty cart cannot be checked out.');
+                    throw EmptyCart::forCheckout();
                 }
 
                 $listings = $this->lockPublishedListings($itemReferences);
@@ -123,7 +127,7 @@ class CheckoutService implements CheckoutServiceInterface
                     ->get();
 
                 if ($cartItems->isEmpty()) {
-                    throw new DomainException('An empty cart cannot be checked out.');
+                    throw EmptyCart::forCheckout();
                 }
 
                 $lines = $this->allocateLineGraph(
@@ -295,7 +299,7 @@ class CheckoutService implements CheckoutServiceInterface
             count($orderItemSequences) !== $cartItems->count()
             || count($invoiceItemSequences) !== $cartItems->count()
         ) {
-            throw new DomainException('The cart changed before its sequence range was reserved.');
+            throw CartChangedDuringCheckout::beforeSequenceReservation();
         }
 
         $lines = [];
@@ -314,7 +318,7 @@ class CheckoutService implements CheckoutServiceInterface
             $availableQuantity = $this->listingInventoryQuantity($listing);
 
             if ($quantity < 1) {
-                throw new DomainException("Cart item [{$cartItem->getKey()}] has an invalid quantity.");
+                throw InvalidCartItemQuantity::forItem((string) $cartItem->getKey());
             }
 
             if ($listingCurrency !== $cartCurrency) {
@@ -393,7 +397,7 @@ class CheckoutService implements CheckoutServiceInterface
             return $order->loadMissing(['items', 'invoice.items']);
         }
 
-        throw new DomainException('The idempotency key does not match this cart.');
+        throw IdempotencyKeyMismatch::forCart();
     }
 
     private function assertCartOwnedByBuyer(Cart $cart, User $buyer): void
@@ -402,7 +406,7 @@ class CheckoutService implements CheckoutServiceInterface
             return;
         }
 
-        throw new DomainException('The cart does not belong to this buyer.');
+        throw CartOwnershipMismatch::forBuyer();
     }
 
     private function assertCartActive(Cart $cart): void
@@ -435,7 +439,7 @@ class CheckoutService implements CheckoutServiceInterface
             return;
         }
 
-        throw new DomainException('You cannot purchase your own listing.');
+        throw SelfPurchaseNotAllowed::forBuyer();
     }
 
     /**
@@ -453,7 +457,7 @@ class CheckoutService implements CheckoutServiceInterface
             ->count();
 
         if ($lineCount < 1) {
-            throw new DomainException('An empty cart cannot be checked out.');
+            throw EmptyCart::forCheckout();
         }
 
         return [
@@ -470,7 +474,7 @@ class CheckoutService implements CheckoutServiceInterface
             return;
         }
 
-        throw new InvalidArgumentException('The idempotency key must contain between 1 and 64 characters.');
+        throw new InvalidArgumentException((string) __('The idempotency key must contain between 1 and 64 characters.'));
     }
 
     private function currencyOf(mixed $currency): string
@@ -480,7 +484,7 @@ class CheckoutService implements CheckoutServiceInterface
         }
 
         if (! is_string($currency)) {
-            throw new UnexpectedValueException('Currency must be a string-backed value.');
+            throw new UnexpectedValueException((string) __('Currency must be a string-backed value.'));
         }
 
         return strtoupper($currency);
@@ -496,7 +500,7 @@ class CheckoutService implements CheckoutServiceInterface
         $inventoryQuantity = $listing->getAttribute('inventory_quantity');
 
         if (! is_int($inventoryQuantity)) {
-            throw new UnexpectedValueException('Listing inventory quantity must be an integer.');
+            throw new UnexpectedValueException((string) __('Listing inventory quantity must be an integer.'));
         }
 
         return $inventoryQuantity;
@@ -507,7 +511,7 @@ class CheckoutService implements CheckoutServiceInterface
         $priceMinor = $cartItem->getAttribute('unit_price_minor');
 
         if (! is_int($priceMinor)) {
-            throw new UnexpectedValueException('Cart item price must be an integer minor-unit amount.');
+            throw new UnexpectedValueException((string) __('Cart item price must be an integer minor-unit amount.'));
         }
 
         return $priceMinor;
@@ -518,7 +522,7 @@ class CheckoutService implements CheckoutServiceInterface
         $sellerId = $listing->getAttribute('seller_id');
 
         if (! is_string($sellerId)) {
-            throw new UnexpectedValueException('Listing seller ID must be a string.');
+            throw new UnexpectedValueException((string) __('Listing seller ID must be a string.'));
         }
 
         return $sellerId;
@@ -529,7 +533,7 @@ class CheckoutService implements CheckoutServiceInterface
         $title = $cartItem->getAttribute('title');
 
         if (! is_string($title)) {
-            throw new UnexpectedValueException('Cart item title must be a string.');
+            throw new UnexpectedValueException((string) __('Cart item title must be a string.'));
         }
 
         return $title;
@@ -540,7 +544,7 @@ class CheckoutService implements CheckoutServiceInterface
         $buyerId = $order->getAttribute('buyer_id');
 
         if (! is_string($buyerId)) {
-            throw new UnexpectedValueException('Order buyer ID must be a string.');
+            throw new UnexpectedValueException((string) __('Order buyer ID must be a string.'));
         }
 
         return $buyerId;

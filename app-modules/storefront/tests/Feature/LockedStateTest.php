@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\AddListingToCart;
 use Kinkoza\Catalog\Models\Listing;
-use Kinkoza\Sales\Contracts\Services\CheckoutServiceInterface;
+use Kinkoza\Sales\Actions\CheckoutCart;
 use Kinkoza\Storefront\Http\Livewire\CartShow;
 use Kinkoza\Storefront\Http\Livewire\CheckoutShow;
 use Kinkoza\Storefront\Http\Livewire\ListingShow;
@@ -29,7 +29,7 @@ test('a listing identifier cannot be replaced by the client', function (): void 
 test('a cart identifier cannot be replaced by the client', function (): void {
     $buyer = User::factory()->create();
     $listing = Listing::factory()->published()->create();
-    $cart = resolve(CartServiceInterface::class)->add(
+    $cart = AddListingToCart::run(
         $listing,
         1,
         $buyer,
@@ -45,7 +45,7 @@ test('a cart identifier cannot be replaced by the client', function (): void {
 test('checkout identity and concurrency tokens cannot be replaced by the client', function (string $property, mixed $value): void {
     $buyer = User::factory()->create();
     $listing = Listing::factory()->published()->create();
-    resolve(CartServiceInterface::class)->add(
+    AddListingToCart::run(
         $listing,
         1,
         $buyer,
@@ -68,13 +68,13 @@ test('an order identifier cannot be replaced by the client', function (): void {
         ->published()
         ->for($seller, 'seller')
         ->create();
-    $cart = resolve(CartServiceInterface::class)->add(
+    $cart = AddListingToCart::run(
         $listing,
         1,
         $buyer,
         (string) Str::ulid(),
     );
-    $order = resolve(CheckoutServiceInterface::class)->checkout(
+    $order = CheckoutCart::run(
         $cart,
         $buyer,
         (string) Str::ulid(),

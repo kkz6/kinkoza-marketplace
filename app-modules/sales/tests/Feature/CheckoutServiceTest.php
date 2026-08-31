@@ -5,17 +5,21 @@ declare(strict_types=1);
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\AddListingToCart;
+use Kinkoza\Cart\Actions\GetOrCreateCart;
 use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
+use Kinkoza\Cart\Exceptions\SelfPurchaseNotAllowed;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Models\Listing;
-use Kinkoza\Sales\Contracts\Services\CheckoutServiceInterface;
+use Kinkoza\Sales\Actions\CheckoutCart;
 use Kinkoza\Sales\Enums\InvoiceStatus;
 use Kinkoza\Sales\Enums\OrderStatus;
+use Kinkoza\Sales\Exceptions\CartOwnershipMismatch;
+use Kinkoza\Sales\Exceptions\IdempotencyKeyMismatch;
 use Kinkoza\Sales\Models\Invoice;
 use Kinkoza\Sales\Models\InvoiceItem;
 use Kinkoza\Sales\Models\Order;
@@ -67,7 +71,7 @@ test('checkout creates the complete immutable order and invoice graph', function
     ]);
     $idempotencyKey = (string) Str::ulid();
 
-    $order = resolve(CheckoutServiceInterface::class)->checkout(
+    $order = CheckoutCart::run(
         $fixture['cart'],
         $buyer,
         $idempotencyKey,
@@ -125,7 +129,7 @@ test('checkout decrements inventory and advances the listing version', function 
         'version' => 4,
     ]);
 
-    resolve(CheckoutServiceInterface::class)->checkout(
+    CheckoutCart::run(
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),
@@ -141,12 +145,12 @@ test('checkout rejects a cart owned by another buyer', function () {
     $intruder = User::factory()->create();
     $fixture = salesCheckoutFixture($owner);
 
-    expect(fn (): Order => resolve(CheckoutServiceInterface::class)->checkout(
+    expect(fn (): Order => CheckoutCart::run(
         $fixture['cart'],
         $intruder,
         (string) Str::ulid(),
         $fixture['cart']->version,
-    ))->toThrow(DomainException::class, 'The cart does not belong to this buyer.');
+    ))->toThrow(CartOwnershipMismatch::class, 'The cart does not belong to this buyer.');
 
     expect(Order::query()->count())->toBe(0)
         ->and($fixture['cart']->fresh()->status)->toBe(CartStatus::Active)
@@ -160,17 +164,16 @@ test('checkout rejects a sellers own listing adopted from a guest cart', functio
         ->for($seller, 'seller')
         ->create(['inventory_quantity' => 3]);
     $guestToken = strtolower((string) Str::ulid());
-    $carts = resolve(CartServiceInterface::class);
-    $guestCart = $carts->add($listing, 1, null, $guestToken);
-    $sellerCart = $carts->getOrCreateFor($seller, $guestToken);
+    $guestCart = AddListingToCart::run($listing, 1, null, $guestToken);
+    $sellerCart = GetOrCreateCart::run($seller, $guestToken);
 
     expect($sellerCart->is($guestCart))->toBeTrue()
-        ->and(fn (): Order => resolve(CheckoutServiceInterface::class)->checkout(
+        ->and(fn (): Order => CheckoutCart::run(
             $sellerCart,
             $seller,
             (string) Str::ulid(),
             $sellerCart->version,
-        ))->toThrow(DomainException::class, 'You cannot purchase your own listing.');
+        ))->toThrow(SelfPurchaseNotAllowed::class, 'You cannot purchase your own listing.');
 
     expect(Order::query()->count())->toBe(0)
         ->and($sellerCart->fresh()->status)->toBe(CartStatus::Active)
@@ -181,11 +184,10 @@ test('checkout is idempotent by key and cart', function () {
     $buyer = User::factory()->create();
     $fixture = salesCheckoutFixture($buyer);
     $idempotencyKey = (string) Str::ulid();
-    $service = resolve(CheckoutServiceInterface::class);
 
-    $firstOrder = $service->checkout($fixture['cart'], $buyer, $idempotencyKey, $fixture['cart']->version);
-    $sameKeyOrder = $service->checkout($fixture['cart'], $buyer, $idempotencyKey, $fixture['cart']->version);
-    $sameCartOrder = $service->checkout($fixture['cart'], $buyer, (string) Str::ulid(), $fixture['cart']->version);
+    $firstOrder = CheckoutCart::run($fixture['cart'], $buyer, $idempotencyKey, $fixture['cart']->version);
+    $sameKeyOrder = CheckoutCart::run($fixture['cart'], $buyer, $idempotencyKey, $fixture['cart']->version);
+    $sameCartOrder = CheckoutCart::run($fixture['cart'], $buyer, (string) Str::ulid(), $fixture['cart']->version);
 
     expect($sameKeyOrder->is($firstOrder))->toBeTrue()
         ->and($sameCartOrder->is($firstOrder))->toBeTrue()
@@ -200,9 +202,8 @@ test('an idempotency key cannot be replayed for another cart owned by the same b
     $buyer = User::factory()->create();
     $firstFixture = salesCheckoutFixture($buyer);
     $idempotencyKey = (string) Str::ulid();
-    $service = resolve(CheckoutServiceInterface::class);
 
-    $service->checkout(
+    CheckoutCart::run(
         $firstFixture['cart'],
         $buyer,
         $idempotencyKey,
@@ -210,12 +211,12 @@ test('an idempotency key cannot be replayed for another cart owned by the same b
     );
     $secondFixture = salesCheckoutFixture($buyer);
 
-    expect(fn (): Order => $service->checkout(
+    expect(fn (): Order => CheckoutCart::run(
         $secondFixture['cart'],
         $buyer,
         $idempotencyKey,
         $secondFixture['cart']->version,
-    ))->toThrow(DomainException::class, 'The idempotency key does not match this cart.');
+    ))->toThrow(IdempotencyKeyMismatch::class, 'The idempotency key does not match this cart.');
 
     expect(Order::query()->count())->toBe(1)
         ->and($secondFixture['cart']->fresh()->status)->toBe(CartStatus::Active)
@@ -228,15 +229,14 @@ test('different buyers may safely use the same idempotency key', function () {
     $firstFixture = salesCheckoutFixture($firstBuyer);
     $secondFixture = salesCheckoutFixture($secondBuyer);
     $idempotencyKey = (string) Str::ulid();
-    $service = resolve(CheckoutServiceInterface::class);
 
-    $firstOrder = $service->checkout(
+    $firstOrder = CheckoutCart::run(
         $firstFixture['cart'],
         $firstBuyer,
         $idempotencyKey,
         $firstFixture['cart']->version,
     );
-    $secondOrder = $service->checkout(
+    $secondOrder = CheckoutCart::run(
         $secondFixture['cart'],
         $secondBuyer,
         $idempotencyKey,
@@ -255,7 +255,7 @@ test('insufficient inventory rolls back the entire checkout', function () {
     ]);
     $activeKey = $fixture['cart']->active_key;
 
-    expect(fn (): Order => resolve(CheckoutServiceInterface::class)->checkout(
+    expect(fn (): Order => CheckoutCart::run(
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),
@@ -278,7 +278,7 @@ test('checkout revalidates that every listing is still published', function () {
 
     $fixture['listing']->forceFill(['offline_at' => now()->subSecond()])->save();
 
-    expect(fn (): Order => resolve(CheckoutServiceInterface::class)->checkout(
+    expect(fn (): Order => CheckoutCart::run(
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),
@@ -298,7 +298,7 @@ test('checkout rejects a cart changed after the buyer reviewed it', function () 
         ->whereKey($fixture['cart']->getKey())
         ->increment('version');
 
-    expect(fn (): Order => resolve(CheckoutServiceInterface::class)->checkout(
+    expect(fn (): Order => CheckoutCart::run(
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),
@@ -321,7 +321,7 @@ test('checkout honours the price snapshot accepted in the cart', function () {
         'price_minor' => 90_000,
     ])->save();
 
-    $order = resolve(CheckoutServiceInterface::class)->checkout(
+    $order = CheckoutCart::run(
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),

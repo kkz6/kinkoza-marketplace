@@ -13,22 +13,29 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Kinkoza\Cart\Models\Cart;
+use Kinkoza\Sales\Actions\SendOrderConfirmation;
 use Kinkoza\Sales\Events\OrderPlaced;
-use Kinkoza\Sales\Listeners\SendOrderConfirmation;
 use Kinkoza\Sales\Models\Invoice;
 use Kinkoza\Sales\Models\Order;
 use Kinkoza\Sales\Notifications\OrderConfirmation;
+use Lorisleiva\Actions\Concerns\AsAction;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-test('the sales provider explicitly registers an after-commit queued listener', function () {
+test('the sales provider explicitly registers an after-commit queued listener action', function () {
     Event::fake();
 
     Event::assertListening(OrderPlaced::class, SendOrderConfirmation::class);
 
+    $action = resolve(SendOrderConfirmation::class);
+
     expect(is_subclass_of(OrderPlaced::class, ShouldDispatchAfterCommit::class))->toBeTrue()
-        ->and(is_subclass_of(SendOrderConfirmation::class, ShouldQueueAfterCommit::class))->toBeTrue();
+        ->and(is_subclass_of(SendOrderConfirmation::class, ShouldQueueAfterCommit::class))->toBeTrue()
+        ->and(class_uses_recursive(SendOrderConfirmation::class))->toContain(AsAction::class)
+        ->and($action->tries)->toBe(3)
+        ->and($action->backoff)->toBe([60, 300])
+        ->and($action->deleteWhenMissingModels)->toBeTrue();
 });
 
 test('the queued listener sends order and invoice references to the buyer', function () {
@@ -47,7 +54,7 @@ test('the queued listener sends order and invoice references to the buyer', func
         ->for($order, 'order')
         ->create(['number' => 'INV-00000422']);
 
-    resolve(SendOrderConfirmation::class)->handle(new OrderPlaced($order));
+    SendOrderConfirmation::run(new OrderPlaced($order));
 
     Notification::assertSentTo(
         $buyer,

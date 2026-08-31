@@ -3,10 +3,10 @@
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\AddListingToCart;
 use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Catalog\Models\Listing;
-use Kinkoza\Sales\Contracts\Services\CheckoutServiceInterface;
+use Kinkoza\Sales\Actions\CheckoutCart;
 use Kinkoza\Sales\Models\Order;
 use Kinkoza\Storefront\Http\Livewire\CheckoutShow;
 use Livewire\Livewire;
@@ -25,7 +25,7 @@ test('checkout UI creates an order and invoice for the authenticated cart owner'
             'price_minor' => 62_500,
             'inventory_quantity' => 5,
         ]);
-    $cart = resolve(CartServiceInterface::class)->add(
+    $cart = AddListingToCart::run(
         $listing,
         2,
         $buyer,
@@ -59,14 +59,13 @@ test('only the buyer can open an order confirmation', function (): void {
     $buyer = User::factory()->create();
     $intruder = User::factory()->create();
     $listing = Listing::factory()->published()->create();
-    $cart = resolve(CartServiceInterface::class)->add(
+    $cart = AddListingToCart::run(
         $listing,
         1,
         $buyer,
         (string) Str::ulid(),
     );
-    $order = resolve(CheckoutServiceInterface::class)
-        ->checkout($cart, $buyer, (string) Str::ulid(), $cart->version);
+    $order = CheckoutCart::run($cart, $buyer, (string) Str::ulid(), $cart->version);
     $url = route('storefront.orders.show', ['order' => $order->id]);
 
     $this->actingAs($buyer)
