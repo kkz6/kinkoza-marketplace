@@ -5,7 +5,8 @@
 	"version": "1.0",
 	"license": "proprietary",
 	"require": {
-		"kinkoza/catalog": "*"
+		"kinkoza/catalog": "*",
+		"lorisleiva/laravel-actions": "^2.12"
 	},
 	"autoload": {
 		"psr-4": {

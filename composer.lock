@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f67d1af376f15b37ad5e591abbb66826",
+    "content-hash": "02f51a11588780cd0dd30c7537bdb9e5",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -2014,10 +2014,11 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/cart",
-                "reference": "e2cd8b6406b57e2cc7dbde22091f0f2fe860f28e"
+                "reference": "c3043362d650ae600f626e26f95f21604fe4715f"
             },
             "require": {
-                "kinkoza/catalog": "*"
+                "kinkoza/catalog": "*",
+                "lorisleiva/laravel-actions": "^2.12"
             },
             "type": "library",
             "extra": {
@@ -2049,12 +2050,13 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/catalog",
-                "reference": "a59d0f190eb2351fbf7cb7fd9fa270299cf68f68"
+                "reference": "cf02dca2bcc7fb8a242a17bd18bdfe338393d879"
             },
             "require": {
                 "illuminate/cache": "^13.0",
                 "illuminate/database": "^13.0",
                 "illuminate/support": "^13.0",
+                "lorisleiva/laravel-actions": "^2.12",
                 "php": "^8.4"
             },
             "require-dev": {
@@ -2093,11 +2095,12 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/sales",
-                "reference": "3b91dcd98f0a5bbb6d18bb1123ba2bdd90613205"
+                "reference": "cf418453979e39a36208425171d66306f358e62d"
             },
             "require": {
                 "kinkoza/cart": "^1.0",
-                "kinkoza/catalog": "^1.0"
+                "kinkoza/catalog": "^1.0",
+                "lorisleiva/laravel-actions": "^2.12"
             },
             "type": "library",
             "extra": {
@@ -2129,12 +2132,13 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/storefront",
-                "reference": "ba073ab3e693021fa45bc140fa85d0f4539674d9"
+                "reference": "0cf1672264deeb6943fe0674f1b82c313632ce67"
             },
             "require": {
                 "kinkoza/cart": "^1.0",
                 "kinkoza/catalog": "^1.0",
-                "kinkoza/sales": "^1.0"
+                "kinkoza/sales": "^1.0",
+                "lorisleiva/laravel-actions": "^2.12"
             },
             "type": "library",
             "extra": {
@@ -3518,6 +3522,164 @@
                 }
             ],
             "time": "2026-08-24T15:02:06+00:00"
+        },
+        {
+            "name": "lorisleiva/laravel-actions",
+            "version": "v2.12.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/lorisleiva/laravel-actions.git",
+                "reference": "8d58b11d4fbca08fbcdb87243a4607bb3ae1db8d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/lorisleiva/laravel-actions/zipball/8d58b11d4fbca08fbcdb87243a4607bb3ae1db8d",
+                "reference": "8d58b11d4fbca08fbcdb87243a4607bb3ae1db8d",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/contracts": "^11.0|^12.0|^13.0",
+                "lorisleiva/lody": "^0.7",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.0",
+                "larastan/larastan": "^3.0",
+                "orchestra/testbench": "^9.0|^10.0|^11.0",
+                "pestphp/pest": "^3.0|^4.0",
+                "phpstan/extension-installer": "^1.4",
+                "phpstan/phpstan": "^2.1",
+                "phpstan/phpstan-phpunit": "^2.0",
+                "phpunit/phpunit": "^11.5|^12.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "aliases": {
+                        "Action": "Lorisleiva\\Actions\\Facades\\Actions"
+                    },
+                    "providers": [
+                        "Lorisleiva\\Actions\\ActionServiceProvider"
+                    ]
+                },
+                "phpstan": {
+                    "includes": [
+                        "extension.neon"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Lorisleiva\\Actions\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Loris Leiva",
+                    "email": "loris.leiva@gmail.com",
+                    "homepage": "https://lorisleiva.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Laravel components that take care of one specific task",
+            "homepage": "https://github.com/lorisleiva/laravel-actions",
+            "keywords": [
+                "action",
+                "command",
+                "component",
+                "controller",
+                "job",
+                "laravel",
+                "listener",
+                "object"
+            ],
+            "support": {
+                "issues": "https://github.com/lorisleiva/laravel-actions/issues",
+                "source": "https://github.com/lorisleiva/laravel-actions/tree/v2.12.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/sponsors/lorisleiva",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-08-25T14:17:11+00:00"
+        },
+        {
+            "name": "lorisleiva/lody",
+            "version": "v0.7.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/lorisleiva/lody.git",
+                "reference": "82ecb6faa55fb20109e6959f42f0f652cd77674b"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/lorisleiva/lody/zipball/82ecb6faa55fb20109e6959f42f0f652cd77674b",
+                "reference": "82ecb6faa55fb20109e6959f42f0f652cd77674b",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/contracts": "^11.0|^12.0|^13.0",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^9.0|^10.0|^11.0",
+                "pestphp/pest": "^3.0|^4.0",
+                "phpunit/phpunit": "^11.5|^12.0"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "aliases": {
+                        "Lody": "Lorisleiva\\Lody\\Lody"
+                    },
+                    "providers": [
+                        "Lorisleiva\\Lody\\LodyServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Lorisleiva\\Lody\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Loris Leiva",
+                    "email": "loris.leiva@gmail.com",
+                    "homepage": "https://lorisleiva.com",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Load files and classes as lazy collections in Laravel.",
+            "homepage": "https://github.com/lorisleiva/lody",
+            "keywords": [
+                "classes",
+                "collection",
+                "files",
+                "laravel",
+                "load"
+            ],
+            "support": {
+                "issues": "https://github.com/lorisleiva/lody/issues",
+                "source": "https://github.com/lorisleiva/lody/tree/v0.7.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/sponsors/lorisleiva",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-03-18T12:49:31+00:00"
         },
         {
             "name": "marc-mabe/php-enum",

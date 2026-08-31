@@ -6,7 +6,8 @@
 	"license": "proprietary",
 	"require": {
 		"kinkoza/cart": "^1.0",
-		"kinkoza/catalog": "^1.0"
+		"kinkoza/catalog": "^1.0",
+		"lorisleiva/laravel-actions": "^2.12"
 	},
 	"autoload": {
 		"psr-4": {

@@ -8,7 +8,8 @@
         "php": "^8.4",
         "illuminate/cache": "^13.0",
         "illuminate/database": "^13.0",
-        "illuminate/support": "^13.0"
+        "illuminate/support": "^13.0",
+        "lorisleiva/laravel-actions": "^2.12"
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",
