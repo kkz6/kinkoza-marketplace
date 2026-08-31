@@ -4,7 +4,9 @@
 	"type": "library",
 	"version": "1.0",
 	"license": "proprietary",
-	"require": {},
+	"require": {
+		"kinkoza/catalog": "*"
+	},
 	"autoload": {
 		"psr-4": {
 			"Kinkoza\\Cart\\": "src/",
