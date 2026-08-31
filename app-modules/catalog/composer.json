@@ -1,24 +1,34 @@
 {
-	"name": "kinkoza/catalog",
-	"description": "",
-	"type": "library",
-	"version": "1.0",
-	"license": "proprietary",
-	"require": {},
-	"autoload": {
-		"psr-4": {
-			"Kinkoza\\Catalog\\": "src/",
-			"Kinkoza\\Catalog\\Tests\\": "tests/",
-			"Kinkoza\\Catalog\\Database\\Factories\\": "database/factories/",
-			"Kinkoza\\Catalog\\Database\\Seeders\\": "database/seeders/"
-		}
-	},
-	"minimum-stability": "stable",
-	"extra": {
-		"laravel": {
-			"providers": [
-				"Kinkoza\\Catalog\\Providers\\CatalogServiceProvider"
-			]
-		}
-	}
+    "name": "kinkoza/catalog",
+    "description": "Catalog domain for marketplace listings.",
+    "type": "library",
+    "version": "1.0",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.4",
+        "illuminate/cache": "^13.0",
+        "illuminate/database": "^13.0",
+        "illuminate/support": "^13.0"
+    },
+    "require-dev": {
+        "fakerphp/faker": "^1.24",
+        "pestphp/pest": "^5.1",
+        "pestphp/pest-plugin-laravel": "^5.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kinkoza\\Catalog\\": "src/",
+            "Kinkoza\\Catalog\\Tests\\": "tests/",
+            "Kinkoza\\Catalog\\Database\\Factories\\": "database/factories/",
+            "Kinkoza\\Catalog\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "minimum-stability": "stable",
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Kinkoza\\Catalog\\Providers\\CatalogServiceProvider"
+            ]
+        }
+    }
 }
