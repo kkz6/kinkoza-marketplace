@@ -1,0 +1,24 @@
+{
+	"name": "kinkoza/sales",
+	"description": "",
+	"type": "library",
+	"version": "1.0",
+	"license": "proprietary",
+	"require": {},
+	"autoload": {
+		"psr-4": {
+			"Kinkoza\\Sales\\": "src/",
+			"Kinkoza\\Sales\\Tests\\": "tests/",
+			"Kinkoza\\Sales\\Database\\Factories\\": "database/factories/",
+			"Kinkoza\\Sales\\Database\\Seeders\\": "database/seeders/"
+		}
+	},
+	"minimum-stability": "stable",
+	"extra": {
+		"laravel": {
+			"providers": [
+				"Kinkoza\\Sales\\Providers\\SalesServiceProvider"
+			]
+		}
+	}
+}

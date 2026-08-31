@@ -1,0 +1,24 @@
+{
+	"name": "kinkoza/cart",
+	"description": "",
+	"type": "library",
+	"version": "1.0",
+	"license": "proprietary",
+	"require": {},
+	"autoload": {
+		"psr-4": {
+			"Kinkoza\\Cart\\": "src/",
+			"Kinkoza\\Cart\\Tests\\": "tests/",
+			"Kinkoza\\Cart\\Database\\Factories\\": "database/factories/",
+			"Kinkoza\\Cart\\Database\\Seeders\\": "database/seeders/"
+		}
+	},
+	"minimum-stability": "stable",
+	"extra": {
+		"laravel": {
+			"providers": [
+				"Kinkoza\\Cart\\Providers\\CartServiceProvider"
+			]
+		}
+	}
+}

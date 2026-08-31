@@ -1,0 +1,24 @@
+{
+	"name": "kinkoza/storefront",
+	"description": "",
+	"type": "library",
+	"version": "1.0",
+	"license": "proprietary",
+	"require": {},
+	"autoload": {
+		"psr-4": {
+			"Kinkoza\\Storefront\\": "src/",
+			"Kinkoza\\Storefront\\Tests\\": "tests/",
+			"Kinkoza\\Storefront\\Database\\Factories\\": "database/factories/",
+			"Kinkoza\\Storefront\\Database\\Seeders\\": "database/seeders/"
+		}
+	},
+	"minimum-stability": "stable",
+	"extra": {
+		"laravel": {
+			"providers": [
+				"Kinkoza\\Storefront\\Providers\\StorefrontServiceProvider"
+			]
+		}
+	}
+}

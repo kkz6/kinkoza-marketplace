@@ -1,0 +1,24 @@
+{
+	"name": "kinkoza/catalog",
+	"description": "",
+	"type": "library",
+	"version": "1.0",
+	"license": "proprietary",
+	"require": {},
+	"autoload": {
+		"psr-4": {
+			"Kinkoza\\Catalog\\": "src/",
+			"Kinkoza\\Catalog\\Tests\\": "tests/",
+			"Kinkoza\\Catalog\\Database\\Factories\\": "database/factories/",
+			"Kinkoza\\Catalog\\Database\\Seeders\\": "database/seeders/"
+		}
+	},
+	"minimum-stability": "stable",
+	"extra": {
+		"laravel": {
+			"providers": [
+				"Kinkoza\\Catalog\\Providers\\CatalogServiceProvider"
+			]
+		}
+	}
+}

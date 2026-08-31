@@ -10,6 +10,11 @@
     "license": "MIT",
     "require": {
         "php": "^8.4",
+        "internachi/modular": "^3.0",
+        "kinkoza/cart": "*",
+        "kinkoza/catalog": "*",
+        "kinkoza/sales": "*",
+        "kinkoza/storefront": "*",
         "laravel/chisel": "^0.1.0",
         "laravel/fortify": "^1.37.2",
         "laravel/framework": "^13.17",
@@ -113,5 +118,14 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "repositories": [
+        {
+            "type": "path",
+            "url": "app-modules/*",
+            "options": {
+                "symlink": true
+            }
+        }
+    ]
 }
