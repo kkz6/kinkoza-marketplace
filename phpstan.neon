@@ -9,5 +9,9 @@ parameters:
         - config/
         - database/
         - routes/
+        - app-modules/catalog/src/
+        - app-modules/cart/src/
+        - app-modules/sales/src/
+        - app-modules/storefront/src/
 
     level: 7

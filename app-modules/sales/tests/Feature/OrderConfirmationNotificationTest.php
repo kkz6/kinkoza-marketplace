@@ -6,7 +6,9 @@ use App\Models\User;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\Events\NotificationSending;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -63,4 +65,28 @@ test('the queued listener sends order and invoice references to the buyer', func
                 && in_array('Invoice reference: INV-00000422', $mail->introLines, true);
         },
     );
+});
+
+test('notification delivery uses the buyers preferred locale', function (): void {
+    $buyer = User::factory()->create(['locale' => 'fr']);
+    $deliveryLocale = null;
+    $subject = null;
+
+    Event::listen(NotificationSending::class, function (NotificationSending $event) use (&$deliveryLocale, &$subject): void {
+        $deliveryLocale = App::getLocale();
+        $mail = $event->notification->toMail($event->notifiable);
+        $subject = $mail->subject;
+    });
+
+    App::setLocale('en');
+    $buyer->notify(new OrderConfirmation(
+        orderId: (string) Str::ulid(),
+        orderNumber: 'ORD-00000423',
+        invoiceId: (string) Str::ulid(),
+        invoiceNumber: 'INV-00000424',
+    ));
+
+    expect($deliveryLocale)->toBe('fr')
+        ->and($subject)->toBe('Commande ORD-00000423 confirmée')
+        ->and(App::getLocale())->toBe('en');
 });
