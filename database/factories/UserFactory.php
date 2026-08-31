@@ -29,6 +29,11 @@ class UserFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'company_name' => null,
+            'registration_number' => null,
+            'phone' => null,
+            'country' => null,
+            'is_verified_seller' => false,
             'remember_token' => Str::random(10),
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
@@ -43,6 +48,17 @@ class UserFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'email_verified_at' => null,
+        ]);
+    }
+
+    public function verifiedSeller(): static
+    {
+        return $this->state(fn () => [
+            'company_name' => fake()->company(),
+            'registration_number' => fake()->unique()->bothify('EU########'),
+            'phone' => fake()->e164PhoneNumber(),
+            'country' => fake()->randomElement(['FR', 'BE', 'LU']),
+            'is_verified_seller' => true,
         ]);
     }
 
