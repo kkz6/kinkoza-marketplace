@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use Kinkoza\Storefront\Http\Controllers\UpdateLocaleController;
+use Kinkoza\Storefront\Actions\UpdateLocale;
 use Kinkoza\Storefront\Http\Livewire\CartShow;
 use Kinkoza\Storefront\Http\Livewire\CheckoutShow;
 use Kinkoza\Storefront\Http\Livewire\CreateListing;
@@ -14,7 +14,7 @@ Route::middleware('web')->group(function (): void {
         ->middleware('throttle:storefront-search')
         ->name('home');
 
-    Route::post('/locale/{locale}', UpdateLocaleController::class)
+    Route::post('/locale/{locale}', UpdateLocale::class)
         ->whereIn('locale', array_keys(config('locales.supported', [])))
         ->middleware('throttle:storefront-action')
         ->name('locale.update');

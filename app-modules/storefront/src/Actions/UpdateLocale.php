@@ -1,15 +1,20 @@
 <?php
 
-namespace Kinkoza\Storefront\Http\Controllers;
+declare(strict_types=1);
+
+namespace Kinkoza\Storefront\Actions;
 
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
+use Lorisleiva\Actions\Concerns\AsAction;
 
-class UpdateLocaleController
+class UpdateLocale
 {
-    public function __invoke(Request $request, string $locale): RedirectResponse
+    use AsAction;
+
+    public function handle(Request $request, string $locale): RedirectResponse
     {
         $supported = config('locales.supported', []);
 
