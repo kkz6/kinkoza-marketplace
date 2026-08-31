@@ -2,6 +2,8 @@
 
 namespace Kinkoza\Catalog\Enums;
 
+use Illuminate\Support\Number;
+
 enum Currency: string
 {
     case EUR = 'EUR';
@@ -51,13 +53,20 @@ enum Currency: string
 
     public function format(int $amountMinor): string
     {
-        $amount = number_format(
+        $formatted = Number::currency(
             $amountMinor / (10 ** $this->decimalPlaces()),
-            $this->decimalPlaces(),
-            '.',
-            ',',
+            in: $this->value,
+            locale: app()->getLocale(),
+            precision: $this->decimalPlaces(),
         );
 
-        return "{$this->symbol()}{$amount}";
+        if (is_string($formatted)) {
+            return $formatted;
+        }
+
+        return $this->symbol().number_format(
+            $amountMinor / (10 ** $this->decimalPlaces()),
+            $this->decimalPlaces(),
+        );
     }
 }

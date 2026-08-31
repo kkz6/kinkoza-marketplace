@@ -22,6 +22,7 @@ return new class extends Migration
             $table->string('registration_number')->nullable()->unique();
             $table->string('phone')->nullable();
             $table->char('country', 2)->nullable();
+            $table->char('locale', 2)->default('en');
             $table->boolean('is_verified_seller')->default(false);
             $table->rememberToken();
             $table->timestamps();

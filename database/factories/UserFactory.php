@@ -33,6 +33,7 @@ class UserFactory extends Factory
             'registration_number' => null,
             'phone' => null,
             'country' => null,
+            'locale' => 'en',
             'is_verified_seller' => false,
             'remember_token' => Str::random(10),
             'two_factor_secret' => null,

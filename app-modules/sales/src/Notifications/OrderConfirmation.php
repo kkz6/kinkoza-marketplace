@@ -32,11 +32,11 @@ class OrderConfirmation extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject("Order {$this->orderNumber} confirmed")
-            ->greeting('Your order is confirmed')
-            ->line("Order reference: {$this->orderNumber}")
-            ->line("Invoice reference: {$this->invoiceNumber}")
-            ->line('We will contact you if any further information is required.');
+            ->subject(__('Order :number confirmed', ['number' => $this->orderNumber]))
+            ->greeting(__('Your order is confirmed'))
+            ->line(__('Order reference: :number', ['number' => $this->orderNumber]))
+            ->line(__('Invoice reference: :number', ['number' => $this->invoiceNumber]))
+            ->line(__('We will contact you if any further information is required.'));
     }
 
     /**

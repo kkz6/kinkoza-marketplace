@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             'registration_number' => 'FR552110998',
             'phone' => '+33472123456',
             'country' => 'FR',
+            'locale' => 'fr',
             'is_verified_seller' => true,
         ])->save();
 
@@ -34,6 +35,7 @@ class DatabaseSeeder extends Seeder
             'registration_number' => 'BE0744887766',
             'phone' => '+3225550198',
             'country' => 'BE',
+            'locale' => 'en',
             'is_verified_seller' => false,
         ])->save();
 
