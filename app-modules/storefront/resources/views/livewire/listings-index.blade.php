@@ -1,4 +1,4 @@
-<div>
+<div class="overflow-x-clip">
     <section class="mx-auto grid min-h-[calc(100dvh-4rem)] max-w-[1400px] items-center gap-10 px-4 py-12 sm:px-6 md:grid-cols-[0.82fr_1.18fr] lg:gap-16 lg:px-8 lg:py-16">
         <div class="max-w-xl">
             <h1 class="text-4xl font-semibold leading-[1.02] tracking-[-0.045em] text-zinc-950 sm:text-5xl lg:text-6xl dark:text-zinc-50">
