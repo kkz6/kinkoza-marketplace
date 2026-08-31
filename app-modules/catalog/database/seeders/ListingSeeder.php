@@ -40,10 +40,9 @@ class ListingSeeder extends Seeder
         foreach ($listings as $index => [$title, $category, $currency, $priceMinor, $country, $city]) {
             $slug = Str::slug($title);
 
-            Listing::factory()->create([
+            Listing::query()->updateOrCreate(['slug' => $slug], [
                 'seller_id' => $seller->getKey(),
                 'title' => $title,
-                'slug' => $slug,
                 'description' => "A verified business asset opportunity in {$city}, with due-diligence materials available to qualified buyers.",
                 'category' => $category,
                 'status' => match ($index) {

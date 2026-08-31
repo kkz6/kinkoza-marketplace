@@ -3,23 +3,40 @@
 namespace Database\Seeders;
 
 use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Kinkoza\Catalog\Database\Seeders\ListingSeeder;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
      * Seed the application's database.
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $seller = User::query()->firstOrNew(['email' => 'seller@example.com']);
+        $seller->forceFill([
+            'name' => 'Sophie Laurent',
+            'password' => 'password',
+            'email_verified_at' => now(),
+            'company_name' => 'Atelier Verne SAS',
+            'registration_number' => 'FR552110998',
+            'phone' => '+33472123456',
+            'country' => 'FR',
+            'is_verified_seller' => true,
+        ])->save();
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        $buyer = User::query()->firstOrNew(['email' => 'buyer@example.com']);
+        $buyer->forceFill([
+            'name' => 'Marc Dubois',
+            'password' => 'password',
+            'email_verified_at' => now(),
+            'company_name' => 'Dubois Procurement SARL',
+            'registration_number' => 'BE0744887766',
+            'phone' => '+3225550198',
+            'country' => 'BE',
+            'is_verified_seller' => false,
+        ])->save();
+
+        $this->call(ListingSeeder::class);
     }
 }
