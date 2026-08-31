@@ -2,7 +2,12 @@
 
 use App\Concerns\PasswordValidationRules;
 use App\Livewire\Actions\Logout;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Kinkoza\Cart\Models\Cart;
+use Kinkoza\Sales\Models\Order;
+use Kinkoza\Sales\Models\OrderItem;
 use Livewire\Component;
 
 new class extends Component {
@@ -19,7 +24,43 @@ new class extends Component {
             'password' => $this->currentPasswordRules(),
         ]);
 
-        tap(Auth::user(), $logout(...))->delete();
+        $user = Auth::user();
+
+        abort_unless($user instanceof User, 403);
+
+        $deleted = DB::transaction(function () use ($user): bool {
+            $lockedUser = User::query()
+                ->whereKey($user->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $hasRetainedRecords = Order::query()
+                ->where('buyer_id', $lockedUser->getKey())
+                ->exists() || OrderItem::query()
+                ->where('seller_id', $lockedUser->getKey())
+                ->exists();
+
+            if ($hasRetainedRecords) {
+                return false;
+            }
+
+            Cart::query()
+                ->where('buyer_id', $lockedUser->getKey())
+                ->delete();
+
+            return (bool) $lockedUser->delete();
+        }, attempts: 3);
+
+        if (! $deleted) {
+            $this->addError(
+                'password',
+                __('Accounts with orders or sales must be retained for invoicing. Contact support to request anonymization.'),
+            );
+
+            return;
+        }
+
+        $logout();
 
         $this->redirect('/', navigate: true);
     }
@@ -31,7 +72,7 @@ new class extends Component {
             <flux:heading size="lg">{{ __('Are you sure you want to delete your account?') }}</flux:heading>
 
             <flux:subheading>
-                {{ __('Once your account is deleted, all of its resources and data will be permanently deleted. Please enter your password to confirm you would like to permanently delete your account.') }}
+                {{ __('Once your account is deleted, its marketplace resources are permanently removed. Accounts connected to orders or sales must instead be retained for invoicing. Please enter your password to continue.') }}
             </flux:subheading>
         </div>
 

@@ -4,6 +4,10 @@ namespace Tests\Feature\Settings;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Kinkoza\Cart\Models\Cart;
+use Kinkoza\Cart\Models\CartItem;
+use Kinkoza\Sales\Models\Order;
+use Kinkoza\Sales\Models\OrderItem;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -85,5 +89,58 @@ class ProfileUpdateTest extends TestCase
         $response->assertHasErrors(['password']);
 
         $this->assertNotNull($user->fresh());
+    }
+
+    public function test_deleting_an_account_removes_its_active_cart_and_items(): void
+    {
+        $user = User::factory()->create();
+        $cart = Cart::factory()->forBuyer($user)->create();
+        CartItem::factory()->forCart($cart)->create();
+
+        $this->actingAs($user);
+
+        Livewire::test('pages::settings.delete-user-modal')
+            ->set('password', 'password')
+            ->call('deleteUser')
+            ->assertHasNoErrors()
+            ->assertRedirect('/');
+
+        $this->assertDatabaseMissing('carts', ['id' => $cart->id]);
+        $this->assertDatabaseCount('cart_items', 0);
+        $this->assertNull($user->fresh());
+    }
+
+    public function test_buyer_with_an_order_is_not_deleted_or_logged_out(): void
+    {
+        $buyer = User::factory()->create();
+        Order::factory()->for($buyer, 'buyer')->create();
+
+        $this->actingAs($buyer);
+
+        Livewire::test('pages::settings.delete-user-modal')
+            ->set('password', 'password')
+            ->call('deleteUser')
+            ->assertHasErrors(['password'])
+            ->assertNoRedirect();
+
+        $this->assertNotNull($buyer->fresh());
+        $this->assertAuthenticatedAs($buyer);
+    }
+
+    public function test_seller_with_an_order_line_is_not_deleted_or_logged_out(): void
+    {
+        $seller = User::factory()->verifiedSeller()->create();
+        OrderItem::factory()->for($seller, 'seller')->create();
+
+        $this->actingAs($seller);
+
+        Livewire::test('pages::settings.delete-user-modal')
+            ->set('password', 'password')
+            ->call('deleteUser')
+            ->assertHasErrors(['password'])
+            ->assertNoRedirect();
+
+        $this->assertNotNull($seller->fresh());
+        $this->assertAuthenticatedAs($seller);
     }
 }

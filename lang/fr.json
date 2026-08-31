@@ -150,5 +150,16 @@
     "Your order is confirmed": "Votre commande est confirmée",
     "Order reference: :number": "Référence de commande : :number",
     "Invoice reference: :number": "Référence de facture : :number",
-    "We will contact you if any further information is required.": "Nous vous contacterons si des informations supplémentaires sont nécessaires."
+    "We will contact you if any further information is required.": "Nous vous contacterons si des informations supplémentaires sont nécessaires.",
+    "Accounts with orders or sales must be retained for invoicing. Contact support to request anonymization.": "Les comptes liés à des commandes ou à des ventes doivent être conservés pour la facturation. Contactez l'assistance pour demander leur anonymisation.",
+    "Once your account is deleted, its marketplace resources are permanently removed. Accounts connected to orders or sales must instead be retained for invoicing. Please enter your password to continue.": "Après la suppression de votre compte, ses ressources sur la place de marché sont supprimées définitivement. Les comptes liés à des commandes ou à des ventes doivent être conservés pour la facturation. Saisissez votre mot de passe pour continuer.",
+    "We could not add this asset. Please try again.": "Nous n'avons pas pu ajouter cet actif. Veuillez réessayer.",
+    "We could not update your cart. Please try again.": "Nous n'avons pas pu mettre à jour votre panier. Veuillez réessayer.",
+    "We could not place your order. Please try again.": "Nous n'avons pas pu passer votre commande. Veuillez réessayer.",
+    "The requested quantity is no longer available.": "La quantité demandée n'est plus disponible.",
+    "This asset is no longer available.": "Cet actif n'est plus disponible.",
+    "Assets in different currencies need separate carts.": "Les actifs libellés dans des devises différentes nécessitent des paniers séparés.",
+    "Your cart changed while you were reviewing it. Refresh and try again.": "Votre panier a changé pendant sa vérification. Actualisez la page et réessayez.",
+    "This cart is no longer active.": "Ce panier n'est plus actif.",
+    "We could not complete that marketplace action. Please refresh and try again.": "Nous n'avons pas pu terminer cette action. Actualisez la page et réessayez."
 }
