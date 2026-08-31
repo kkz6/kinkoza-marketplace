@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Kinkoza\Cart\Services;
+namespace Kinkoza\Cart\Actions\Concerns;
 
 use App\Models\User;
 use BackedEnum;
@@ -22,172 +22,13 @@ use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Models\Listing;
 use UnexpectedValueException;
 
-final class CartService
+trait InteractsWithCarts
 {
     private const int LOCK_SECONDS = 10;
 
     private const int LOCK_WAIT_SECONDS = 5;
 
     private const int TRANSACTION_ATTEMPTS = 5;
-
-    public function getOrCreateFor(?User $buyer, string $guestToken): Cart
-    {
-        if ($buyer) {
-            return $this->findOrClaimBuyerCart($buyer, $guestToken);
-        }
-
-        [$buyerId, $normalizedGuestToken, $activeKey] = $this->identity($buyer, $guestToken);
-
-        return Cache::lock($this->identityLockKey($activeKey), self::LOCK_SECONDS)
-            ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(
-                fn (): Cart => $this->findOrCreateActiveCart($buyerId, $normalizedGuestToken, $activeKey),
-                self::TRANSACTION_ATTEMPTS,
-            ));
-    }
-
-    public function add(
-        Listing $listing,
-        int $quantity,
-        ?User $buyer,
-        string $guestToken,
-        ?int $expectedVersion = null,
-    ): Cart {
-        $this->assertPositiveQuantity($quantity);
-
-        if ($buyer) {
-            $this->assertListingNotOwnedByBuyer($listing, (string) $buyer->getKey());
-            $this->getOrCreateFor($buyer, $guestToken);
-        }
-
-        [$buyerId, $normalizedGuestToken, $activeKey] = $this->identity($buyer, $guestToken);
-
-        return Cache::lock($this->identityLockKey($activeKey), self::LOCK_SECONDS)
-            ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(function () use (
-                $activeKey,
-                $buyerId,
-                $expectedVersion,
-                $listing,
-                $normalizedGuestToken,
-                $quantity,
-            ): Cart {
-                $cart = $this->findOrCreateActiveCart($buyerId, $normalizedGuestToken, $activeKey);
-                $cart = $this->lockCart((string) $cart->getKey());
-
-                $this->assertActive($cart);
-                $this->assertVersion($cart, $expectedVersion);
-
-                $lockedListing = $this->lockPublishedListing((string) $listing->getKey());
-                $this->assertListingNotOwnedByBuyer($lockedListing, $buyerId);
-                $listingCurrency = $this->currencyOf($lockedListing);
-                $listingPriceMinor = $this->listingPriceMinor($lockedListing);
-
-                $item = CartItem::query()
-                    ->where('cart_id', $cart->getKey())
-                    ->where('listing_id', $lockedListing->getKey())
-                    ->lockForUpdate()
-                    ->first();
-
-                $newQuantity = $quantity;
-
-                if ($item) {
-                    $newQuantity += $item->quantity;
-                }
-
-                $this->assertInventory($lockedListing, $newQuantity);
-                $this->prepareCurrency($cart, $listingCurrency);
-
-                if ($item) {
-                    $item->forceFill([
-                        'quantity' => $newQuantity,
-                        'line_total_minor' => $item->unit_price_minor * $newQuantity,
-                    ])->save();
-                }
-
-                if (! $item) {
-                    CartItem::query()->forceCreate([
-                        'cart_id' => $cart->getKey(),
-                        'listing_id' => $lockedListing->getKey(),
-                        'sku' => (string) $lockedListing->getKey(),
-                        'title' => $this->listingTitle($lockedListing),
-                        'currency' => $listingCurrency,
-                        'unit_price_minor' => $listingPriceMinor,
-                        'line_total_minor' => $listingPriceMinor * $quantity,
-                        'quantity' => $quantity,
-                    ]);
-                }
-
-                return $this->recalculate($cart);
-            }, self::TRANSACTION_ATTEMPTS));
-    }
-
-    public function updateQuantity(
-        Cart $cart,
-        string $itemId,
-        int $quantity,
-        int $expectedVersion,
-    ): Cart {
-        $this->assertPositiveQuantity($quantity);
-
-        return Cache::lock($this->cartLockKey((string) $cart->getKey()), self::LOCK_SECONDS)
-            ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(function () use (
-                $cart,
-                $expectedVersion,
-                $itemId,
-                $quantity,
-            ): Cart {
-                $lockedCart = $this->lockCart((string) $cart->getKey());
-
-                $this->assertActive($lockedCart);
-                $this->assertVersion($lockedCart, $expectedVersion);
-
-                $itemReference = $this->findItem($lockedCart, $itemId);
-
-                if (! $itemReference->listing_id) {
-                    throw ListingUnavailable::forListing($itemId);
-                }
-
-                $listing = $this->lockPublishedListing((string) $itemReference->listing_id);
-                $item = $this->lockItem($lockedCart, $itemId);
-
-                $this->assertInventory($listing, $quantity);
-
-                $item->forceFill([
-                    'quantity' => $quantity,
-                    'line_total_minor' => $item->unit_price_minor * $quantity,
-                ])->save();
-
-                return $this->recalculate($lockedCart);
-            }, self::TRANSACTION_ATTEMPTS));
-    }
-
-    public function remove(Cart $cart, string $itemId, int $expectedVersion): Cart
-    {
-        return Cache::lock($this->cartLockKey((string) $cart->getKey()), self::LOCK_SECONDS)
-            ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(function () use (
-                $cart,
-                $expectedVersion,
-                $itemId,
-            ): Cart {
-                $lockedCart = $this->lockCart((string) $cart->getKey());
-
-                $this->assertActive($lockedCart);
-                $this->assertVersion($lockedCart, $expectedVersion);
-
-                $itemReference = $this->findItem($lockedCart, $itemId);
-
-                if ($itemReference->listing_id) {
-                    Listing::query()
-                        ->whereKey($itemReference->listing_id)
-                        ->lockForUpdate()
-                        ->first();
-                }
-
-                $item = $this->lockItem($lockedCart, $itemId);
-                $item->delete();
-
-                return $this->recalculate($lockedCart);
-            }, self::TRANSACTION_ATTEMPTS));
-    }
 
     /**
      * @return array{0: string|null, 1: string|null, 2: string}

@@ -24,7 +24,7 @@ beforeEach(function (): void {
     $this->guestToken = strtolower((string) Str::ulid());
 });
 
-test('adding a listing twice increments one cart item', function (): void {
+test('the add action increments one cart item when a listing is added twice', function (): void {
     $listing = Listing::factory()->create([
         'price_minor' => 2_500,
         'currency' => 'EUR',
