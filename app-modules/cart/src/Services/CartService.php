@@ -32,6 +32,10 @@ class CartService implements CartServiceInterface
 
     public function getOrCreateFor(?User $buyer, string $guestToken): Cart
     {
+        if ($buyer) {
+            return $this->findOrClaimBuyerCart($buyer, $guestToken);
+        }
+
         [$buyerId, $normalizedGuestToken, $activeKey] = $this->identity($buyer, $guestToken);
 
         return Cache::lock($this->identityLockKey($activeKey), self::LOCK_SECONDS)
@@ -49,6 +53,10 @@ class CartService implements CartServiceInterface
         ?int $expectedVersion = null,
     ): Cart {
         $this->assertPositiveQuantity($quantity);
+
+        if ($buyer) {
+            $this->getOrCreateFor($buyer, $guestToken);
+        }
 
         [$buyerId, $normalizedGuestToken, $activeKey] = $this->identity($buyer, $guestToken);
 
@@ -230,6 +238,126 @@ class CartService implements CartServiceInterface
         $this->assertActive($cart);
 
         return $cart;
+    }
+
+    private function findOrClaimBuyerCart(User $buyer, string $guestToken): Cart
+    {
+        $guestToken = strtolower(trim($guestToken));
+
+        if (! Str::isUlid($guestToken)) {
+            throw new InvalidArgumentException('A valid guest ULID is required to restore a cart.');
+        }
+
+        $buyerId = (string) $buyer->getKey();
+        $buyerKey = "buyer:{$buyerId}";
+        $guestKey = "guest:{$guestToken}";
+
+        return Cache::lock($this->identityLockKey($buyerKey), self::LOCK_SECONDS)
+            ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => Cache::lock(
+                $this->identityLockKey($guestKey),
+                self::LOCK_SECONDS,
+            )->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(
+                fn (): Cart => $this->claimGuestCart($buyerId, $guestToken, $buyerKey, $guestKey),
+                self::TRANSACTION_ATTEMPTS,
+            )));
+    }
+
+    private function claimGuestCart(
+        string $buyerId,
+        string $guestToken,
+        string $buyerKey,
+        string $guestKey,
+    ): Cart {
+        $carts = Cart::query()
+            ->whereIn('active_key', [$buyerKey, $guestKey])
+            ->where('status', CartStatus::Active->value)
+            ->orderBy('active_key')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('active_key');
+
+        $buyerCart = $carts->get($buyerKey);
+        $guestCart = $carts->get($guestKey);
+
+        if (! $guestCart instanceof Cart) {
+            return $buyerCart instanceof Cart
+                ? $buyerCart
+                : $this->findOrCreateActiveCart($buyerId, null, $buyerKey);
+        }
+
+        if (! $buyerCart instanceof Cart) {
+            return $this->adoptGuestCart($guestCart, $buyerId, $buyerKey);
+        }
+
+        $buyerItems = CartItem::query()
+            ->where('cart_id', $buyerCart->getKey())
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        $guestItems = CartItem::query()
+            ->where('cart_id', $guestCart->getKey())
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        if ($guestItems->isEmpty()) {
+            $this->abandon($guestCart);
+
+            return $buyerCart;
+        }
+
+        if ($buyerItems->isEmpty() || $buyerCart->currency !== $guestCart->currency) {
+            $this->abandon($buyerCart);
+
+            return $this->adoptGuestCart($guestCart, $buyerId, $buyerKey);
+        }
+
+        $buyerItemsByListing = $buyerItems->keyBy('listing_id');
+
+        foreach ($guestItems as $guestItem) {
+            $buyerItem = $buyerItemsByListing->get($guestItem->listing_id);
+
+            if (! $buyerItem instanceof CartItem) {
+                $guestItem->forceFill(['cart_id' => $buyerCart->getKey()])->save();
+
+                continue;
+            }
+
+            $quantity = $buyerItem->quantity + $guestItem->quantity;
+
+            $buyerItem->forceFill([
+                'title' => $guestItem->title,
+                'currency' => $guestItem->currency,
+                'unit_price_minor' => $guestItem->unit_price_minor,
+                'quantity' => $quantity,
+                'line_total_minor' => $guestItem->unit_price_minor * $quantity,
+            ])->save();
+        }
+
+        $this->abandon($guestCart);
+
+        return $this->recalculate($buyerCart);
+    }
+
+    private function adoptGuestCart(Cart $guestCart, string $buyerId, string $buyerKey): Cart
+    {
+        $guestCart->forceFill([
+            'buyer_id' => $buyerId,
+            'guest_token' => null,
+            'active_key' => $buyerKey,
+            'version' => $guestCart->version + 1,
+        ])->save();
+
+        return $guestCart->fresh(['items']);
+    }
+
+    private function abandon(Cart $cart): void
+    {
+        $cart->forceFill([
+            'active_key' => null,
+            'status' => CartStatus::Abandoned,
+            'version' => $cart->version + 1,
+        ])->save();
     }
 
     private function lockCart(string $cartId): Cart

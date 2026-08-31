@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
@@ -107,6 +108,51 @@ test('buyer and guest identities receive isolated active carts', function (): vo
         ->and($guestCart->isNot($buyerCart))->toBeTrue();
 
     expect(Cart::query()->whereNotNull('active_key')->count())->toBe(4);
+});
+
+test('a guest cart is adopted when the guest signs in', function (): void {
+    $buyer = User::factory()->create();
+    $listing = Listing::factory()->create([
+        'currency' => 'EUR',
+        'price_minor' => 4_500,
+        'inventory_quantity' => 5,
+    ]);
+    $guestCart = $this->cartService->add($listing, 2, null, $this->guestToken);
+
+    $claimedCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+
+    expect($claimedCart->is($guestCart))->toBeTrue()
+        ->and($claimedCart->buyer_id)->toBe($buyer->id)
+        ->and($claimedCart->guest_token)->toBeNull()
+        ->and($claimedCart->active_key)->toBe("buyer:{$buyer->id}")
+        ->and($claimedCart->items)->toHaveCount(1)
+        ->and($claimedCart->items->sole()->quantity)->toBe(2);
+});
+
+test('guest items merge into an existing buyer cart', function (): void {
+    $buyer = User::factory()->create();
+    $firstListing = Listing::factory()->create([
+        'currency' => 'EUR',
+        'price_minor' => 1_000,
+        'inventory_quantity' => 10,
+    ]);
+    $secondListing = Listing::factory()->create([
+        'currency' => 'EUR',
+        'price_minor' => 2_000,
+        'inventory_quantity' => 10,
+    ]);
+    $buyerCart = $this->cartService->add($firstListing, 1, $buyer, (string) Str::ulid());
+    $guestCart = $this->cartService->add($firstListing, 2, null, $this->guestToken);
+    $guestCart = $this->cartService->add($secondListing, 1, null, $this->guestToken, $guestCart->version);
+
+    $mergedCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+
+    expect($mergedCart->is($buyerCart))->toBeTrue()
+        ->and($mergedCart->items)->toHaveCount(2)
+        ->and($mergedCart->items->firstWhere('listing_id', $firstListing->id)?->quantity)->toBe(3)
+        ->and($mergedCart->total_minor)->toBe(5_000)
+        ->and($guestCart->fresh()->status)->toBe(CartStatus::Abandoned)
+        ->and($guestCart->fresh()->active_key)->toBeNull();
 });
 
 test('quantity updates and removal recompute totals and versions', function (): void {
