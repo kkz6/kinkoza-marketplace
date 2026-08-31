@@ -7,11 +7,11 @@ use DomainException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\AddListingToCart;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Catalog\Models\Listing;
+use Kinkoza\Storefront\Actions\RevealSellerContact;
+use Kinkoza\Storefront\Exceptions\ContactRevealRateLimited;
 use Kinkoza\Storefront\Support\CartIdentity;
 use Kinkoza\Storefront\Support\DomainErrorMessage;
 use Livewire\Attributes\Computed;
@@ -75,7 +75,6 @@ class ListingShow extends Component
     }
 
     public function addToCart(
-        CartServiceInterface $carts,
         CartIdentity $identity,
     ): void {
         if (Auth::id() === $this->listing->seller_id) {
@@ -89,7 +88,7 @@ class ListingShow extends Component
         ]);
 
         try {
-            $cart = $carts->add(
+            $cart = AddListingToCart::run(
                 $this->listing,
                 $this->quantity,
                 $identity->buyer(),
@@ -120,22 +119,13 @@ class ListingShow extends Component
             return;
         }
 
-        $this->authorize('revealContact', $this->listing);
-
-        $key = "contact-reveal:{$user->getAuthIdentifier()}";
-        $allowed = RateLimiter::attempt($key, 5, static fn (): bool => true, 60);
-
-        if (! $allowed) {
-            $this->addError('contact', __('Too many contact requests. Please wait before trying again.'));
+        try {
+            RevealSellerContact::run($user, $this->listing, request()->ip());
+        } catch (ContactRevealRateLimited $exception) {
+            $this->addError('contact', $exception->getMessage());
 
             return;
         }
-
-        Log::notice('Seller contact details revealed.', [
-            'buyer_id' => $user->getAuthIdentifier(),
-            'listing_id' => $this->listingId,
-            'ip' => request()->ip(),
-        ]);
 
         $this->contactRevealed = true;
     }

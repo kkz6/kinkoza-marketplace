@@ -10,6 +10,9 @@ class StaleCartVersion extends RuntimeException
 {
     public static function forVersions(int $expectedVersion, int $actualVersion): self
     {
-        return new self("Cart version [{$expectedVersion}] is stale; current version is [{$actualVersion}].");
+        return new self((string) __('Cart version [:expected] is stale; current version is [:actual].', [
+            'actual' => $actualVersion,
+            'expected' => $expectedVersion,
+        ]));
     }
 }

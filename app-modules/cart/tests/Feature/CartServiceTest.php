@@ -5,10 +5,14 @@ declare(strict_types=1);
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\AddListingToCart;
+use Kinkoza\Cart\Actions\GetOrCreateCart;
+use Kinkoza\Cart\Actions\RemoveCartItem;
+use Kinkoza\Cart\Actions\UpdateCartItemQuantity;
 use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
+use Kinkoza\Cart\Exceptions\SelfPurchaseNotAllowed;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Catalog\Models\Listing;
@@ -17,7 +21,6 @@ use Tests\TestCase;
 uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $this->cartService = app(CartServiceInterface::class);
     $this->guestToken = strtolower((string) Str::ulid());
 });
 
@@ -28,8 +31,8 @@ test('adding a listing twice increments one cart item', function (): void {
         'inventory_quantity' => 10,
     ]);
 
-    $cart = $this->cartService->add($listing, 2, null, $this->guestToken);
-    $cart = $this->cartService->add($listing, 1, null, $this->guestToken, $cart->version);
+    $cart = AddListingToCart::run($listing, 2, null, $this->guestToken);
+    $cart = AddListingToCart::run($listing, 1, null, $this->guestToken, $cart->version);
 
     expect($cart->items)->toHaveCount(1)
         ->and($cart->items->first()->quantity)->toBe(3)
@@ -50,8 +53,8 @@ test('totals are recomputed from item snapshot values', function (): void {
         'inventory_quantity' => 10,
     ]);
 
-    $cart = $this->cartService->add($firstListing, 2, null, $this->guestToken);
-    $cart = $this->cartService->add($secondListing, 3, null, $this->guestToken, $cart->version);
+    $cart = AddListingToCart::run($firstListing, 2, null, $this->guestToken);
+    $cart = AddListingToCart::run($secondListing, 3, null, $this->guestToken, $cart->version);
 
     expect($cart->subtotal_minor)->toBe(3_100)
         ->and($cart->total_minor)->toBe(3_100)
@@ -63,7 +66,7 @@ test('quantity cannot exceed locked listing inventory', function (): void {
         'inventory_quantity' => 2,
     ]);
 
-    expect(fn () => $this->cartService->add($listing, 3, null, $this->guestToken))
+    expect(fn () => AddListingToCart::run($listing, 3, null, $this->guestToken))
         ->toThrow(InsufficientInventory::class);
 
     expect(Cart::query()->count())->toBe(0);
@@ -75,8 +78,8 @@ test('an authenticated seller cannot add their own listing', function (): void {
         ->for($seller, 'seller')
         ->create();
 
-    expect(fn () => $this->cartService->add($listing, 1, $seller, $this->guestToken))
-        ->toThrow(DomainException::class, 'You cannot purchase your own listing.');
+    expect(fn () => AddListingToCart::run($listing, 1, $seller, $this->guestToken))
+        ->toThrow(SelfPurchaseNotAllowed::class, 'You cannot purchase your own listing.');
 
     expect(Cart::query()->count())->toBe(0);
 });
@@ -85,10 +88,10 @@ test('stale cart versions are rejected without changing an item', function (): v
     $listing = Listing::factory()->create([
         'inventory_quantity' => 10,
     ]);
-    $cart = $this->cartService->add($listing, 1, null, $this->guestToken);
+    $cart = AddListingToCart::run($listing, 1, null, $this->guestToken);
     $item = $cart->items->sole();
 
-    expect(fn () => $this->cartService->updateQuantity($cart, $item->id, 2, 1))
+    expect(fn () => UpdateCartItemQuantity::run($cart, $item->id, 2, 1))
         ->toThrow(StaleCartVersion::class);
 
     $cart->refresh()->load('items');
@@ -102,12 +105,12 @@ test('buyer and guest identities receive isolated active carts', function (): vo
     $otherBuyer = User::factory()->create();
     $otherGuestToken = strtolower((string) Str::ulid());
 
-    $buyerCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
-    $sameBuyerCart = $this->cartService->getOrCreateFor($buyer, $otherGuestToken);
-    $otherBuyerCart = $this->cartService->getOrCreateFor($otherBuyer, $this->guestToken);
-    $guestCart = $this->cartService->getOrCreateFor(null, $this->guestToken);
-    $sameGuestCart = $this->cartService->getOrCreateFor(null, $this->guestToken);
-    $otherGuestCart = $this->cartService->getOrCreateFor(null, $otherGuestToken);
+    $buyerCart = GetOrCreateCart::run($buyer, $this->guestToken);
+    $sameBuyerCart = GetOrCreateCart::run($buyer, $otherGuestToken);
+    $otherBuyerCart = GetOrCreateCart::run($otherBuyer, $this->guestToken);
+    $guestCart = GetOrCreateCart::run(null, $this->guestToken);
+    $sameGuestCart = GetOrCreateCart::run(null, $this->guestToken);
+    $otherGuestCart = GetOrCreateCart::run(null, $otherGuestToken);
 
     expect($sameBuyerCart->is($buyerCart))->toBeTrue()
         ->and($buyerCart->buyer_id)->toBe($buyer->id)
@@ -129,9 +132,9 @@ test('a guest cart is adopted when the guest signs in', function (): void {
         'price_minor' => 4_500,
         'inventory_quantity' => 5,
     ]);
-    $guestCart = $this->cartService->add($listing, 2, null, $this->guestToken);
+    $guestCart = AddListingToCart::run($listing, 2, null, $this->guestToken);
 
-    $claimedCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+    $claimedCart = GetOrCreateCart::run($buyer, $this->guestToken);
 
     expect($claimedCart->is($guestCart))->toBeTrue()
         ->and($claimedCart->buyer_id)->toBe($buyer->id)
@@ -153,11 +156,11 @@ test('guest items merge into an existing buyer cart', function (): void {
         'price_minor' => 2_000,
         'inventory_quantity' => 10,
     ]);
-    $buyerCart = $this->cartService->add($firstListing, 1, $buyer, (string) Str::ulid());
-    $guestCart = $this->cartService->add($firstListing, 2, null, $this->guestToken);
-    $guestCart = $this->cartService->add($secondListing, 1, null, $this->guestToken, $guestCart->version);
+    $buyerCart = AddListingToCart::run($firstListing, 1, $buyer, (string) Str::ulid());
+    $guestCart = AddListingToCart::run($firstListing, 2, null, $this->guestToken);
+    $guestCart = AddListingToCart::run($secondListing, 1, null, $this->guestToken, $guestCart->version);
 
-    $mergedCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+    $mergedCart = GetOrCreateCart::run($buyer, $this->guestToken);
 
     expect($mergedCart->is($buyerCart))->toBeTrue()
         ->and($mergedCart->items)->toHaveCount(2)
@@ -179,10 +182,10 @@ test('different currency carts remain intact when a guest signs in', function ()
         'price_minor' => 2_000,
         'inventory_quantity' => 10,
     ]);
-    $buyerCart = $this->cartService->add($euroListing, 1, $buyer, (string) Str::ulid());
-    $guestCart = $this->cartService->add($sterlingListing, 2, null, $this->guestToken);
+    $buyerCart = AddListingToCart::run($euroListing, 1, $buyer, (string) Str::ulid());
+    $guestCart = AddListingToCart::run($sterlingListing, 2, null, $this->guestToken);
 
-    $restoredCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+    $restoredCart = GetOrCreateCart::run($buyer, $this->guestToken);
 
     expect($restoredCart->is($buyerCart))->toBeTrue()
         ->and($buyerCart->fresh()->status)->toBe(CartStatus::Active)
@@ -198,10 +201,10 @@ test('an overstocked guest merge leaves both carts intact', function (): void {
         'price_minor' => 1_000,
         'inventory_quantity' => 3,
     ]);
-    $buyerCart = $this->cartService->add($listing, 2, $buyer, (string) Str::ulid());
-    $guestCart = $this->cartService->add($listing, 2, null, $this->guestToken);
+    $buyerCart = AddListingToCart::run($listing, 2, $buyer, (string) Str::ulid());
+    $guestCart = AddListingToCart::run($listing, 2, null, $this->guestToken);
 
-    $restoredCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+    $restoredCart = GetOrCreateCart::run($buyer, $this->guestToken);
 
     expect($restoredCart->is($buyerCart))->toBeTrue()
         ->and($buyerCart->fresh()->items->sole()->quantity)->toBe(2)
@@ -215,16 +218,16 @@ test('quantity updates and removal recompute totals and versions', function (): 
         'currency' => 'EUR',
         'inventory_quantity' => 10,
     ]);
-    $cart = $this->cartService->add($listing, 1, null, $this->guestToken);
+    $cart = AddListingToCart::run($listing, 1, null, $this->guestToken);
     $item = $cart->items->sole();
 
-    $cart = $this->cartService->updateQuantity($cart, $item->id, 4, $cart->version);
+    $cart = UpdateCartItemQuantity::run($cart, $item->id, 4, $cart->version);
 
     expect($cart->subtotal_minor)->toBe(3_000)
         ->and($cart->total_minor)->toBe(3_000)
         ->and($cart->version)->toBe(3);
 
-    $cart = $this->cartService->remove($cart, $item->id, $cart->version);
+    $cart = RemoveCartItem::run($cart, $item->id, $cart->version);
 
     expect($cart->items)->toBeEmpty()
         ->and($cart->subtotal_minor)->toBe(0)
@@ -235,6 +238,6 @@ test('quantity updates and removal recompute totals and versions', function (): 
 test('unpublished listings cannot be added', function (): void {
     $listing = Listing::factory()->draft()->create();
 
-    expect(fn () => $this->cartService->add($listing, 1, null, $this->guestToken))
+    expect(fn () => AddListingToCart::run($listing, 1, null, $this->guestToken))
         ->toThrow(ListingUnavailable::class);
 });

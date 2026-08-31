@@ -14,7 +14,11 @@ class InsufficientInventory extends DomainException
         int $availableQuantity,
     ): self {
         return new self(
-            "Listing [{$listingId}] only has [{$availableQuantity}] units available; [{$requestedQuantity}] requested."
+            (string) __('Listing [:listing] only has [:available] units available; [:requested] requested.', [
+                'available' => $availableQuantity,
+                'listing' => $listingId,
+                'requested' => $requestedQuantity,
+            ]),
         );
     }
 }

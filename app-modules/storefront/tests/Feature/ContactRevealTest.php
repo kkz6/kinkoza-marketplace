@@ -2,8 +2,11 @@
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\RateLimiter;
 use Kinkoza\Catalog\Models\Listing;
+use Kinkoza\Storefront\Actions\RevealSellerContact;
+use Kinkoza\Storefront\Exceptions\ContactRevealRateLimited;
 use Kinkoza\Storefront\Http\Livewire\ListingShow;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
@@ -68,6 +71,24 @@ test('a verified non seller can reveal the protected seller contact', function (
         ->assertSet('contactRevealed', true)
         ->assertSee($seller->email)
         ->assertSee($seller->phone);
+});
+
+test('the contact reveal action rate limits a buyer with a localized error', function (): void {
+    $buyer = User::factory()->create();
+    $listing = Listing::factory()->published()->create();
+
+    RateLimiter::clear("contact-reveal:{$buyer->id}");
+    App::setLocale('fr');
+
+    foreach (range(1, 5) as $attempt) {
+        RevealSellerContact::run($buyer, $listing, '127.0.0.1');
+    }
+
+    expect(fn () => RevealSellerContact::run($buyer, $listing, '127.0.0.1'))
+        ->toThrow(
+            ContactRevealRateLimited::class,
+            'Trop de demandes de coordonnées. Veuillez patienter avant de réessayer.',
+        );
 });
 
 test('contact reveal state cannot be written by the client to expose seller details', function (): void {

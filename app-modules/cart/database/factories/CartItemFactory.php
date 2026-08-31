@@ -55,7 +55,7 @@ class CartItemFactory extends Factory
         }
 
         if (! is_string($currency) || ! is_string($title) || ! is_int($priceMinor)) {
-            throw new UnexpectedValueException('Listing snapshot attributes are invalid.');
+            throw new UnexpectedValueException((string) __('Listing snapshot attributes are invalid.'));
         }
 
         return $this->state(fn (): array => [

@@ -3,7 +3,7 @@
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\AddListingToCart;
 use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Enums\Currency;
@@ -47,7 +47,7 @@ test('cart UI updates quantity and removes an item using the current version', f
         'price_minor' => 2_500,
         'inventory_quantity' => 8,
     ]);
-    $cart = resolve(CartServiceInterface::class)->add(
+    $cart = AddListingToCart::run(
         $listing,
         1,
         $buyer,
@@ -83,8 +83,7 @@ test('cart UI updates quantity and removes an item using the current version', f
 
 test('unexpected cart failures never expose infrastructure details', function (): void {
     $listing = Listing::factory()->published()->create();
-    $service = $this->mock(CartServiceInterface::class);
-    $service->shouldReceive('add')
+    AddListingToCart::shouldRun()
         ->once()
         ->andThrow(new RuntimeException('SQLSTATE secret connection details'));
 

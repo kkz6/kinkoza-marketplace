@@ -6,24 +6,23 @@ namespace Kinkoza\Cart\Services;
 
 use App\Models\User;
 use BackedEnum;
-use DomainException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
 use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Cart\Exceptions\CartNotActive;
 use Kinkoza\Cart\Exceptions\CurrencyMismatch;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
+use Kinkoza\Cart\Exceptions\SelfPurchaseNotAllowed;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Models\Listing;
 use UnexpectedValueException;
 
-class CartService implements CartServiceInterface
+final class CartService
 {
     private const int LOCK_SECONDS = 10;
 
@@ -204,7 +203,7 @@ class CartService implements CartServiceInterface
         $guestToken = strtolower(trim($guestToken));
 
         if (! Str::isUlid($guestToken)) {
-            throw new InvalidArgumentException('A valid guest ULID is required when no buyer is present.');
+            throw new InvalidArgumentException((string) __('A valid guest ULID is required when no buyer is present.'));
         }
 
         return [null, $guestToken, "guest:{$guestToken}"];
@@ -250,7 +249,7 @@ class CartService implements CartServiceInterface
         $guestToken = strtolower(trim($guestToken));
 
         if (! Str::isUlid($guestToken)) {
-            throw new InvalidArgumentException('A valid guest ULID is required to restore a cart.');
+            throw new InvalidArgumentException((string) __('A valid guest ULID is required to restore a cart.'));
         }
 
         $buyerId = (string) $buyer->getKey();
@@ -485,7 +484,7 @@ class CartService implements CartServiceInterface
             return;
         }
 
-        throw new DomainException('You cannot purchase your own listing.');
+        throw SelfPurchaseNotAllowed::forBuyer();
     }
 
     private function assertVersion(Cart $cart, ?int $expectedVersion): void
@@ -512,7 +511,7 @@ class CartService implements CartServiceInterface
             return;
         }
 
-        throw new InvalidArgumentException('Cart quantity must be greater than zero.');
+        throw new InvalidArgumentException((string) __('Cart quantity must be greater than zero.'));
     }
 
     private function recalculate(Cart $cart): Cart
@@ -537,7 +536,7 @@ class CartService implements CartServiceInterface
         }
 
         if (! is_string($currency)) {
-            throw new UnexpectedValueException('Listing currency must be a string-backed value.');
+            throw new UnexpectedValueException((string) __('Listing currency must be a string-backed value.'));
         }
 
         return strtoupper($currency);
@@ -548,7 +547,7 @@ class CartService implements CartServiceInterface
         $title = $listing->getAttribute('title');
 
         if (! is_string($title)) {
-            throw new UnexpectedValueException('Listing title must be a string.');
+            throw new UnexpectedValueException((string) __('Listing title must be a string.'));
         }
 
         return $title;
@@ -559,7 +558,7 @@ class CartService implements CartServiceInterface
         $priceMinor = $listing->getAttribute('price_minor');
 
         if (! is_int($priceMinor)) {
-            throw new UnexpectedValueException('Listing price must be an integer minor-unit amount.');
+            throw new UnexpectedValueException((string) __('Listing price must be an integer minor-unit amount.'));
         }
 
         return $priceMinor;
@@ -570,7 +569,7 @@ class CartService implements CartServiceInterface
         $inventoryQuantity = $listing->getAttribute('inventory_quantity');
 
         if (! is_int($inventoryQuantity)) {
-            throw new UnexpectedValueException('Listing inventory quantity must be an integer.');
+            throw new UnexpectedValueException((string) __('Listing inventory quantity must be an integer.'));
         }
 
         return $inventoryQuantity;

@@ -10,6 +10,8 @@ class ListingUnavailable extends DomainException
 {
     public static function forListing(string $listingId): self
     {
-        return new self("Listing [{$listingId}] is unavailable.");
+        return new self((string) __('Listing [:listing] is unavailable.', [
+            'listing' => $listingId,
+        ]));
     }
 }

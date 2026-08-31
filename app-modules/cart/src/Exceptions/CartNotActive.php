@@ -10,6 +10,8 @@ class CartNotActive extends DomainException
 {
     public static function forCart(string $cartId): self
     {
-        return new self("Cart [{$cartId}] is not active.");
+        return new self((string) __('Cart [:cart] is not active.', [
+            'cart' => $cartId,
+        ]));
     }
 }

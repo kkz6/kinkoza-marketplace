@@ -4,7 +4,9 @@ namespace Kinkoza\Storefront\Http\Livewire;
 
 use DomainException;
 use Illuminate\Contracts\View\View;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\GetOrCreateCart;
+use Kinkoza\Cart\Actions\RemoveCartItem;
+use Kinkoza\Cart\Actions\UpdateCartItemQuantity;
 use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
@@ -26,10 +28,9 @@ class CartShow extends Component
     public string $cartId;
 
     public function mount(
-        CartServiceInterface $carts,
         CartIdentity $identity,
     ): void {
-        $cart = $carts->getOrCreateFor(
+        $cart = GetOrCreateCart::run(
             $identity->buyer(),
             $identity->guestToken(),
         );
@@ -63,10 +64,9 @@ class CartShow extends Component
         string $itemId,
         int $quantity,
         int $version,
-        CartServiceInterface $carts,
     ): void {
         try {
-            $carts->updateQuantity($this->cart, $itemId, $quantity, $version);
+            UpdateCartItemQuantity::run($this->cart, $itemId, $quantity, $version);
         } catch (DomainException|StaleCartVersion $exception) {
             $this->addError('cart', DomainErrorMessage::for($exception));
 
@@ -85,10 +85,9 @@ class CartShow extends Component
     public function remove(
         string $itemId,
         int $version,
-        CartServiceInterface $carts,
     ): void {
         try {
-            $carts->remove($this->cart, $itemId, $version);
+            RemoveCartItem::run($this->cart, $itemId, $version);
         } catch (DomainException|StaleCartVersion $exception) {
             $this->addError('cart', DomainErrorMessage::for($exception));
 
