@@ -5,12 +5,12 @@ namespace Kinkoza\Storefront\Http\Livewire;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Facades\Auth;
+use Kinkoza\Catalog\Actions\CreateListing as CreateCatalogListing;
 use Kinkoza\Catalog\Enums\Country;
 use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Catalog\Enums\ListingCategory;
 use Kinkoza\Catalog\Enums\ListingStatus;
 use Kinkoza\Catalog\Models\Listing;
-use Kinkoza\Catalog\Services\CreateListingService;
 use Kinkoza\Storefront\Http\Livewire\Forms\ListingForm;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -28,7 +28,7 @@ class CreateListing extends Component
         $this->form->onlineAt = now()->format('Y-m-d\TH:i');
     }
 
-    public function save(CreateListingService $listings): void
+    public function save(): void
     {
         $this->authorize('create', Listing::class);
 
@@ -36,7 +36,7 @@ class CreateListing extends Component
 
         abort_unless($seller instanceof User, 403);
 
-        $listing = $listings->create($seller, $this->form->toData());
+        $listing = CreateCatalogListing::run($seller, $this->form->toData());
 
         $message = $listing->status === ListingStatus::PendingReview
             ? __('Your listing was submitted for review.')

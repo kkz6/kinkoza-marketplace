@@ -1,6 +1,8 @@
 <?php
 
-namespace Kinkoza\Catalog\Services;
+declare(strict_types=1);
+
+namespace Kinkoza\Catalog\Actions;
 
 use App\Models\User;
 use App\Support\Database\SequenceGenerator;
@@ -10,15 +12,18 @@ use Kinkoza\Catalog\Data\CreateListingData;
 use Kinkoza\Catalog\Enums\ListingStatus;
 use Kinkoza\Catalog\Models\Listing;
 use Kinkoza\Catalog\Support\CatalogCache;
+use Lorisleiva\Actions\Concerns\AsAction;
 
-final readonly class CreateListingService
+class CreateListing
 {
+    use AsAction;
+
     public function __construct(
-        private CatalogCache $cache,
-        private SequenceGenerator $sequences,
+        private readonly CatalogCache $cache,
+        private readonly SequenceGenerator $sequences,
     ) {}
 
-    public function create(User $seller, CreateListingData $data): Listing
+    public function handle(User $seller, CreateListingData $data): Listing
     {
         $sequence = $this->sequences->next('listings');
 

@@ -4,12 +4,12 @@ use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Kinkoza\Catalog\Actions\CreateListing;
 use Kinkoza\Catalog\Data\CreateListingData;
 use Kinkoza\Catalog\Enums\Country;
 use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Catalog\Enums\ListingCategory;
 use Kinkoza\Catalog\Enums\ListingStatus;
-use Kinkoza\Catalog\Services\CreateListingService;
 use Kinkoza\Catalog\Support\CatalogCache;
 use Tests\TestCase;
 
@@ -21,11 +21,10 @@ beforeEach(function () {
 
 test('a verified seller can publish a listing with a unique slug', function () {
     $seller = User::factory()->verifiedSeller()->create();
-    $service = app(CreateListingService::class);
     $cache = app(CatalogCache::class);
     $version = $cache->version();
 
-    $listing = $service->create($seller, new CreateListingData(
+    $listing = CreateListing::run($seller, new CreateListingData(
         title: 'Five Axis CNC Machine',
         description: 'A maintained production machine with service history.',
         category: ListingCategory::MachineryEquipment,
@@ -45,7 +44,7 @@ test('a verified seller can publish a listing with a unique slug', function () {
         ->and($listing->image_url)->toBeNull()
         ->and($cache->version())->toBe($version + 1);
 
-    $duplicate = $service->create($seller, new CreateListingData(
+    $duplicate = CreateListing::run($seller, new CreateListingData(
         title: 'Five Axis CNC Machine',
         description: 'A second machine from the same production site.',
         category: ListingCategory::MachineryEquipment,
@@ -65,7 +64,7 @@ test('an unverified seller publication request is held for review', function () 
         'is_verified_seller' => false,
     ]);
 
-    $listing = app(CreateListingService::class)->create(
+    $listing = CreateListing::run(
         $seller,
         new CreateListingData(
             title: 'Regional Delivery Fleet',
