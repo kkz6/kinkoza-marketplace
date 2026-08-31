@@ -5,25 +5,14 @@ declare(strict_types=1);
 namespace Kinkoza\Sales\Models;
 
 use App\Models\Concerns\HasUlidAndSequence;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Guarded;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Sales\Database\Factories\InvoiceItemFactory;
 
-#[Fillable([
-    'id',
-    'sequence',
-    'invoice_id',
-    'order_item_id',
-    'listing_id',
-    'title',
-    'currency',
-    'unit_price_minor',
-    'quantity',
-    'line_total_minor',
-])]
+#[Guarded(['*'])]
 class InvoiceItem extends Model
 {
     /** @use HasFactory<InvoiceItemFactory> */

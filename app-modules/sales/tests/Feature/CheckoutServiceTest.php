@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
 use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
@@ -150,6 +151,30 @@ test('checkout rejects a cart owned by another buyer', function () {
     expect(Order::query()->count())->toBe(0)
         ->and($fixture['cart']->fresh()->status)->toBe(CartStatus::Active)
         ->and($fixture['listing']->fresh()->inventory_quantity)->toBe(10);
+});
+
+test('checkout rejects a sellers own listing adopted from a guest cart', function () {
+    $seller = User::factory()->verifiedSeller()->create();
+    $listing = Listing::factory()
+        ->published()
+        ->for($seller, 'seller')
+        ->create(['inventory_quantity' => 3]);
+    $guestToken = strtolower((string) Str::ulid());
+    $carts = resolve(CartServiceInterface::class);
+    $guestCart = $carts->add($listing, 1, null, $guestToken);
+    $sellerCart = $carts->getOrCreateFor($seller, $guestToken);
+
+    expect($sellerCart->is($guestCart))->toBeTrue()
+        ->and(fn (): Order => resolve(CheckoutServiceInterface::class)->checkout(
+            $sellerCart,
+            $seller,
+            (string) Str::ulid(),
+            $sellerCart->version,
+        ))->toThrow(DomainException::class, 'You cannot purchase your own listing.');
+
+    expect(Order::query()->count())->toBe(0)
+        ->and($sellerCart->fresh()->status)->toBe(CartStatus::Active)
+        ->and($listing->fresh()->inventory_quantity)->toBe(3);
 });
 
 test('checkout is idempotent by key and cart', function () {

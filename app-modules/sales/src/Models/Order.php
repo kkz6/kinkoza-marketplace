@@ -6,7 +6,7 @@ namespace Kinkoza\Sales\Models;
 
 use App\Models\Concerns\HasUlidAndSequence;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Guarded;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,19 +17,7 @@ use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Sales\Database\Factories\OrderFactory;
 use Kinkoza\Sales\Enums\OrderStatus;
 
-#[Fillable([
-    'id',
-    'sequence',
-    'number',
-    'buyer_id',
-    'cart_id',
-    'idempotency_key',
-    'status',
-    'currency',
-    'subtotal_minor',
-    'total_minor',
-    'placed_at',
-])]
+#[Guarded(['*'])]
 class Order extends Model
 {
     /** @use HasFactory<OrderFactory> */

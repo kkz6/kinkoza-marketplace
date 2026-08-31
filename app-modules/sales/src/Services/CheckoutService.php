@@ -113,6 +113,7 @@ class CheckoutService implements CheckoutServiceInterface
                 }
 
                 $listings = $this->lockPublishedListings($itemReferences);
+                $this->assertListingsNotOwnedByBuyer($listings, $buyer);
                 $cartItems = CartItem::query()
                     ->where('cart_id', $lockedCart->getKey())
                     ->orderBy('id')
@@ -137,7 +138,7 @@ class CheckoutService implements CheckoutServiceInterface
                 $orderSequence = $sequenceAllocation['order'];
                 $invoiceSequence = $sequenceAllocation['invoice'];
 
-                $order = Order::query()->create([
+                $order = Order::query()->forceCreate([
                     'id' => $orderId,
                     'sequence' => $orderSequence,
                     'number' => sprintf('ORD-%08d', $orderSequence),
@@ -152,7 +153,7 @@ class CheckoutService implements CheckoutServiceInterface
                 ]);
 
                 foreach ($lines as $line) {
-                    OrderItem::query()->create([
+                    OrderItem::query()->forceCreate([
                         'id' => $line['order_item_id'],
                         'sequence' => $line['order_item_sequence'],
                         'order_id' => $orderId,
@@ -166,7 +167,7 @@ class CheckoutService implements CheckoutServiceInterface
                     ]);
                 }
 
-                $invoice = Invoice::query()->create([
+                $invoice = Invoice::query()->forceCreate([
                     'id' => $invoiceId,
                     'sequence' => $invoiceSequence,
                     'number' => sprintf('INV-%08d', $invoiceSequence),
@@ -179,7 +180,7 @@ class CheckoutService implements CheckoutServiceInterface
                 ]);
 
                 foreach ($lines as $line) {
-                    InvoiceItem::query()->create([
+                    InvoiceItem::query()->forceCreate([
                         'id' => $line['invoice_item_id'],
                         'sequence' => $line['invoice_item_sequence'],
                         'invoice_id' => $invoiceId,
@@ -418,6 +419,21 @@ class CheckoutService implements CheckoutServiceInterface
         }
 
         throw StaleCartVersion::forVersions($expectedVersion, $cart->version);
+    }
+
+    /** @param  EloquentCollection<string, Listing>  $listings */
+    private function assertListingsNotOwnedByBuyer(EloquentCollection $listings, User $buyer): void
+    {
+        $buyerId = (string) $buyer->getKey();
+        $containsOwnListing = $listings->contains(
+            fn (Listing $listing): bool => (string) $listing->getAttribute('seller_id') === $buyerId,
+        );
+
+        if (! $containsOwnListing) {
+            return;
+        }
+
+        throw new DomainException('You cannot purchase your own listing.');
     }
 
     /**
