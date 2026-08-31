@@ -37,7 +37,7 @@ uses(TestCase::class, RefreshDatabase::class);
  *     seller: User
  * }
  */
-function salesCheckoutFixture(User $buyer, int $quantity = 1, array $listingAttributes = []): array
+function checkoutCartFixture(User $buyer, int $quantity = 1, array $listingAttributes = []): array
 {
     $seller = User::factory()->verifiedSeller()->create();
     $listing = Listing::factory()
@@ -65,7 +65,7 @@ function salesCheckoutFixture(User $buyer, int $quantity = 1, array $listingAttr
 
 test('checkout creates the complete immutable order and invoice graph', function () {
     $buyer = User::factory()->create();
-    $fixture = salesCheckoutFixture($buyer, 2, [
+    $fixture = checkoutCartFixture($buyer, 2, [
         'title' => 'Five-axis machining centre',
         'price_minor' => 375_000,
     ]);
@@ -124,7 +124,7 @@ test('checkout creates the complete immutable order and invoice graph', function
 
 test('checkout decrements inventory and advances the listing version', function () {
     $buyer = User::factory()->create();
-    $fixture = salesCheckoutFixture($buyer, 3, [
+    $fixture = checkoutCartFixture($buyer, 3, [
         'inventory_quantity' => 7,
         'version' => 4,
     ]);
@@ -143,7 +143,7 @@ test('checkout decrements inventory and advances the listing version', function 
 test('checkout rejects a cart owned by another buyer', function () {
     $owner = User::factory()->create();
     $intruder = User::factory()->create();
-    $fixture = salesCheckoutFixture($owner);
+    $fixture = checkoutCartFixture($owner);
 
     expect(fn (): Order => CheckoutCart::run(
         $fixture['cart'],
@@ -182,7 +182,7 @@ test('checkout rejects a sellers own listing adopted from a guest cart', functio
 
 test('checkout is idempotent by key and cart', function () {
     $buyer = User::factory()->create();
-    $fixture = salesCheckoutFixture($buyer);
+    $fixture = checkoutCartFixture($buyer);
     $idempotencyKey = (string) Str::ulid();
 
     $firstOrder = CheckoutCart::run($fixture['cart'], $buyer, $idempotencyKey, $fixture['cart']->version);
@@ -200,7 +200,7 @@ test('checkout is idempotent by key and cart', function () {
 
 test('an idempotency key cannot be replayed for another cart owned by the same buyer', function () {
     $buyer = User::factory()->create();
-    $firstFixture = salesCheckoutFixture($buyer);
+    $firstFixture = checkoutCartFixture($buyer);
     $idempotencyKey = (string) Str::ulid();
 
     CheckoutCart::run(
@@ -209,7 +209,7 @@ test('an idempotency key cannot be replayed for another cart owned by the same b
         $idempotencyKey,
         $firstFixture['cart']->version,
     );
-    $secondFixture = salesCheckoutFixture($buyer);
+    $secondFixture = checkoutCartFixture($buyer);
 
     expect(fn (): Order => CheckoutCart::run(
         $secondFixture['cart'],
@@ -226,8 +226,8 @@ test('an idempotency key cannot be replayed for another cart owned by the same b
 test('different buyers may safely use the same idempotency key', function () {
     $firstBuyer = User::factory()->create();
     $secondBuyer = User::factory()->create();
-    $firstFixture = salesCheckoutFixture($firstBuyer);
-    $secondFixture = salesCheckoutFixture($secondBuyer);
+    $firstFixture = checkoutCartFixture($firstBuyer);
+    $secondFixture = checkoutCartFixture($secondBuyer);
     $idempotencyKey = (string) Str::ulid();
 
     $firstOrder = CheckoutCart::run(
@@ -249,7 +249,7 @@ test('different buyers may safely use the same idempotency key', function () {
 
 test('insufficient inventory rolls back the entire checkout', function () {
     $buyer = User::factory()->create();
-    $fixture = salesCheckoutFixture($buyer, 2, [
+    $fixture = checkoutCartFixture($buyer, 2, [
         'inventory_quantity' => 1,
         'version' => 8,
     ]);
@@ -274,7 +274,7 @@ test('insufficient inventory rolls back the entire checkout', function () {
 
 test('checkout revalidates that every listing is still published', function () {
     $buyer = User::factory()->create();
-    $fixture = salesCheckoutFixture($buyer);
+    $fixture = checkoutCartFixture($buyer);
 
     $fixture['listing']->forceFill(['offline_at' => now()->subSecond()])->save();
 
@@ -291,7 +291,7 @@ test('checkout revalidates that every listing is still published', function () {
 
 test('checkout rejects a cart changed after the buyer reviewed it', function () {
     $buyer = User::factory()->create();
-    $fixture = salesCheckoutFixture($buyer);
+    $fixture = checkoutCartFixture($buyer);
     $reviewedVersion = $fixture['cart']->version;
 
     Cart::query()
@@ -311,7 +311,7 @@ test('checkout rejects a cart changed after the buyer reviewed it', function () 
 
 test('checkout honours the price snapshot accepted in the cart', function () {
     $buyer = User::factory()->create();
-    $fixture = salesCheckoutFixture($buyer, 2, [
+    $fixture = checkoutCartFixture($buyer, 2, [
         'title' => 'Original machine title',
         'price_minor' => 45_000,
     ]);
