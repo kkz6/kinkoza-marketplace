@@ -65,7 +65,9 @@ class CheckoutService implements CheckoutServiceInterface
             return $this->assertOrderMatchesRequest($existingOrder, $buyer, $cart);
         }
 
-        $preflightCart = Cart::query()->findOrFail($cart->getKey());
+        $preflightCart = Cart::query()
+            ->whereKey($cart->getKey())
+            ->firstOrFail();
 
         $this->assertCartOwnedByBuyer($preflightCart, $buyer);
         $this->assertCartActive($preflightCart);
