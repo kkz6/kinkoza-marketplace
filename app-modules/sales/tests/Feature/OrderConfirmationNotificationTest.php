@@ -1,0 +1,66 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Models\User;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
+use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Str;
+use Kinkoza\Cart\Models\Cart;
+use Kinkoza\Sales\Events\OrderPlaced;
+use Kinkoza\Sales\Listeners\SendOrderConfirmation;
+use Kinkoza\Sales\Models\Invoice;
+use Kinkoza\Sales\Models\Order;
+use Kinkoza\Sales\Notifications\OrderConfirmation;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
+
+test('the sales provider explicitly registers an after-commit queued listener', function () {
+    Event::fake();
+
+    Event::assertListening(OrderPlaced::class, SendOrderConfirmation::class);
+
+    expect(is_subclass_of(OrderPlaced::class, ShouldDispatchAfterCommit::class))->toBeTrue()
+        ->and(is_subclass_of(SendOrderConfirmation::class, ShouldQueueAfterCommit::class))->toBeTrue();
+});
+
+test('the queued listener sends order and invoice references to the buyer', function () {
+    Notification::fake();
+
+    $buyer = User::factory()->create();
+    $cart = Cart::factory()->forBuyer($buyer)->converted()->create();
+    $order = Order::factory()
+        ->for($buyer, 'buyer')
+        ->for($cart, 'cart')
+        ->create([
+            'number' => 'ORD-00000421',
+            'idempotency_key' => (string) Str::ulid(),
+        ]);
+    $invoice = Invoice::factory()
+        ->for($order, 'order')
+        ->create(['number' => 'INV-00000422']);
+
+    resolve(SendOrderConfirmation::class)->handle(new OrderPlaced($order));
+
+    Notification::assertSentTo(
+        $buyer,
+        function (OrderConfirmation $notification, array $channels) use ($buyer, $invoice, $order): bool {
+            $mail = $notification->toMail($buyer);
+
+            return $channels === ['mail']
+                && $notification->orderId === $order->getKey()
+                && $notification->orderNumber === 'ORD-00000421'
+                && $notification->invoiceId === $invoice->getKey()
+                && $notification->invoiceNumber === 'INV-00000422'
+                && $mail instanceof MailMessage
+                && $mail->subject === 'Order ORD-00000421 confirmed'
+                && in_array('Order reference: ORD-00000421', $mail->introLines, true)
+                && in_array('Invoice reference: INV-00000422', $mail->introLines, true);
+        },
+    );
+});
