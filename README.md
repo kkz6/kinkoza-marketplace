@@ -31,7 +31,7 @@ The application is a Laravel host with four Composer path packages under `app-mo
 
 The host application owns cross-cutting concerns: users and authentication, locale middleware, per-entity numeric sequences, framework configuration, and frontend assets. Application-facing use cases are exposed as classes using `lorisleiva/laravel-actions`. Livewire components call typed action entry points such as `CreateListing::run(...)`, `AddListingToCart::run(...)`, and `CheckoutCart::run(...)`; Laravel resolves each action and delegates to its `handle(...)` method.
 
-Actions form the public orchestration boundary. Small use cases can live entirely in an action, while transaction-heavy workflows delegate to internal services such as `CartService` and `CheckoutService`. Storefront does not resolve those services or depend on service interfaces. Actions can also adapt other Laravel entry points: `UpdateLocale` is an invokable route action, and `SendOrderConfirmation` is the queued after-commit listener for `OrderPlaced`.
+Actions own the application workflows and their business logic. Cart and checkout actions enforce their transactions, locks, concurrency checks, and domain invariants directly, and Storefront depends only on those typed action entry points. Actions can also adapt other Laravel entry points: `UpdateLocale` is an invokable route action, and `SendOrderConfirmation` is the queued after-commit listener for `OrderPlaced`.
 
 The dependency direction is intentionally one-way: the storefront composes the domains, sales consumes cart and catalog state, and cart consumes catalog state. Catalog does not depend on checkout or presentation code.
 

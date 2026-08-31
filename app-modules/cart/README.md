@@ -18,7 +18,7 @@ App shared kernel                  Catalog
 
 Cart declares `kinkoza/catalog` as a package dependency and uses the host application's `User`, `HasUlidAndSequence`, and `SequenceGenerator`. Catalog and the shared kernel do not depend on Cart. Sales and Storefront consume Cart; Cart does not call either consumer.
 
-The Composer path package is discovered through `Kinkoza\Cart\Providers\CartServiceProvider`. Public use cases are Laravel Action classes, so the provider does not maintain a service-interface binding. `routes/cart-routes.php` is intentionally empty because Cart exposes PHP actions rather than an HTTP API.
+The Composer path package is discovered through `Kinkoza\Cart\Providers\CartServiceProvider`. Public use cases and their business logic live in Laravel Action classes, so the provider needs no workflow binding. `routes/cart-routes.php` is intentionally empty because Cart exposes PHP actions rather than an HTTP API.
 
 ## Directory map
 
@@ -32,7 +32,6 @@ src/Enums/                       Cart lifecycle status
 src/Exceptions/                  Expected cart-domain failures
 src/Models/                      Eloquent cart aggregate
 src/Providers/                   Package discovery provider
-src/Services/                    Internal transactional implementation
 tests/Feature/                   Pest action/invariant tests
 ```
 
@@ -82,7 +81,7 @@ Relationships:
 
 The unique index on `cart_id` plus `listing_id` keeps one live line per listing in a cart. Re-adding that listing increments the existing quantity instead of creating another line.
 
-Both models are fully guarded. Domain writes therefore go through the internal `CartService`'s explicit `forceFill`/`forceCreate` calls rather than accepting arbitrary request arrays.
+Both models are fully guarded. The owning actions therefore perform explicit `forceFill`/`forceCreate` writes instead of accepting arbitrary request arrays.
 
 ### ULIDs and numeric sequences
 
@@ -96,7 +95,7 @@ Sequence allocation is unique and increasing per sequence name. Consumers must n
 
 ## Guest and buyer identity
 
-The internal service derives an active identity key rather than trusting a cart ID supplied by a browser:
+The Cart actions derive an active identity key rather than trusting a cart ID supplied by a browser:
 
 | Identity | Persisted identity |
 | --- | --- |
@@ -145,7 +144,7 @@ RemoveCartItem::run(
 ): Cart;
 ```
 
-The actions are intentionally thin. They define the stable, use-case-oriented entry points while `Kinkoza\Cart\Services\CartService` remains the internal implementation for locks, transactions, identity restoration, snapshots, totals, and invariant checks. Cross-module callers should use the actions rather than resolve `CartService` directly.
+Each action owns its complete use-case implementation, including the required locks, transactions, identity restoration, snapshots, totals, and invariant checks. Reusable cart mechanics shared by multiple actions live in `Kinkoza\Cart\Actions\Concerns\InteractsWithCarts`; cross-module callers still enter the domain through a focused action rather than depending on those mechanics.
 
 A version-aware guest flow looks like this:
 
@@ -194,7 +193,7 @@ Invalid cart/item identifiers can also produce Eloquent model-not-found failures
 
 ### Locking
 
-The internal `CartService` combines two kinds of lock:
+The Cart actions combine two kinds of lock:
 
 - Cache locks serialize work by identity (`cart:identity:{sha256(active-key)}`) or by cart (`cart:{cart-ulid}`). Locks have a 10-second lease and wait for up to 5 seconds.
 - Database transactions retry up to five times and use `lockForUpdate()` for the active cart, affected item, and relevant published listing rows.
@@ -241,21 +240,21 @@ new active cart (version 1)
                                converted_at set, version + 1
 ```
 
-`CartStatus` has `Active`, `Converted`, and `Abandoned` cases. Cart itself creates and mutates active carts and privately marks merge sources abandoned. `Kinkoza\Sales\Actions\CheckoutCart::run(...)` is the public checkout handoff; it delegates to Sales' internal `CheckoutService`, which verifies buyer ownership and cart version, creates the order/invoice graph, decrements stock, then clears `active_key` and sets `converted_at` in the same transaction.
+`CartStatus` has `Active`, `Converted`, and `Abandoned` cases. Cart itself creates and mutates active carts and privately marks merge sources abandoned. `Kinkoza\Sales\Actions\CheckoutCart::run(...)` is the checkout handoff; the action verifies buyer ownership and cart version, creates the order/invoice graph, decrements stock, then clears `active_key` and sets `converted_at` in the same transaction.
 
 Converted and abandoned carts remain as historical records but cannot be mutated through the public Cart actions.
 
 ## Extension points
 
 - Add a focused action under `src/Actions` for each new public use case. Give it a typed `handle(...)` method and test callers through `ActionName::run(...)`.
-- Keep `CartService` internal. Actions may delegate transaction-heavy work to it, but Storefront and other modules should depend on the use-case actions rather than its method surface.
-- Keep HTTP, session, authentication, and translated presentation errors in Storefront or another adapter rather than adding them to actions or the internal service.
+- Keep each use case's business logic in its owning action. Extract only genuinely shared cart mechanics to a focused concern under `src/Actions/Concerns`.
+- Keep HTTP, session, authentication, and translated presentation errors in Storefront or another adapter rather than adding them to domain actions.
 - Laravel Actions can be faked with helpers such as `AddListingToCart::shouldRun()` when a presentation test needs to isolate orchestration from domain work.
 - Add new domain failures under `src/Exceptions` and map safe user-facing text in Storefront's `DomainErrorMessage`.
-- Extending totals with discounts, tax, or shipping requires explicit schema and service changes plus matching Sales checkout semantics. `recalculate()` is private and currently supports subtotal-only totals; it is not an overridable pricing hook.
+- Extending totals with discounts, tax, or shipping requires explicit schema and action changes plus matching Sales checkout semantics. `recalculate()` is private and currently supports subtotal-only totals; it is not an overridable pricing hook.
 - Inventory reservation would be a new cross-module workflow. The current actions perform availability checks only; checkout remains the deduction boundary.
 - Cart emits no domain events today. Add events deliberately at committed lifecycle points if downstream integrations require them.
-- Add lifecycle values only with matching migration/default, action, internal service, factory, checkout, and test updates.
+- Add lifecycle values only with matching migration/default, action, factory, checkout, and test updates.
 
 ## Testing
 
@@ -268,7 +267,7 @@ herd php artisan test app-modules/cart/tests/Feature
 Run the focused action and domain-invariant test file:
 
 ```bash
-herd php artisan test app-modules/cart/tests/Feature/CartServiceTest.php
+herd php artisan test app-modules/cart/tests/Feature/CartActionsTest.php
 ```
 
 Run the complete formatting, static-analysis, host, and module suite:

@@ -1,6 +1,6 @@
 # Storefront module
 
-`kinkoza/storefront` is the HTTP and presentation layer for the marketplace. It composes the Catalog, Cart, and Sales modules into server-driven Livewire pages while keeping business rules in their owning domain actions and internal transactional services.
+`kinkoza/storefront` is the HTTP and presentation layer for the marketplace. It composes the Catalog, Cart, and Sales modules into server-driven Livewire pages while keeping business rules in their owning domain actions.
 
 The module owns routes, Livewire components, form validation, page layouts, visitor cart identity, localized error presentation, and request-level abuse protection. It does not own ecommerce tables or duplicate checkout, inventory, publication, or cart invariants.
 
@@ -48,7 +48,7 @@ Rate limits are registered in `StorefrontServiceProvider`. Authentication, email
 
 ## Action orchestration
 
-Storefront calls domain use cases through Laravel Actions. A synchronous call such as `AddListingToCart::run(...)` resolves the action through Laravel's container and forwards the arguments to its typed `handle(...)` method. The presentation layer depends on these use-case entry points, not on `CartService` or `CheckoutService` directly; the Cart and Sales actions delegate to those internal services when a workflow needs locks and multi-record transactions.
+Storefront calls domain use cases through Laravel Actions. A synchronous call such as `AddListingToCart::run(...)` resolves the action through Laravel's container and forwards the arguments to its typed `handle(...)` method. The presentation layer depends on these use-case entry points, while the Cart and Sales actions directly own the locks, multi-record transactions, and domain invariants their workflows require.
 
 `Kinkoza\Storefront\Actions\UpdateLocale` is mounted directly as the `POST /locale/{locale}` route handler. Laravel invokes its `handle(Request, string): RedirectResponse` method through the action's invokable-controller adapter. `RevealSellerContact` is a synchronous action invoked with `::run(...)` so authorization, throttling, and audit logging remain one reusable boundary.
 
@@ -60,7 +60,7 @@ Builds the public catalog query using published records only. Search, category, 
 
 ### `ListingShow`
 
-Loads a listing by slug and re-applies publication or seller-ownership scope on every computed lookup. It calls `Kinkoza\Cart\Actions\AddListingToCart::run(...)` and prevents self-purchase at the UI boundary before Cart repeats the check inside its transactional service.
+Loads a listing by slug and re-applies publication or seller-ownership scope on every computed lookup. It calls `Kinkoza\Cart\Actions\AddListingToCart::run(...)` and prevents self-purchase at the UI boundary before the action repeats the check inside its transaction.
 
 Seller contact information is not part of the normal listing query. A signed-in buyer must explicitly reveal it through `Kinkoza\Storefront\Actions\RevealSellerContact::run(...)`; the action repeats policy authorization, applies a five-attempts-per-minute limit, and emits a notice-level audit log. The locked reveal flag cannot be changed by the browser, and authorization runs again before contact data is returned.
 
@@ -74,7 +74,7 @@ Resolves a guest or buyer cart with `GetOrCreateCart::run(...)`. The cart identi
 
 ### `CheckoutShow`
 
-Locks the cart identifier, cart version, and a generated ULID idempotency key at mount time. It resolves the cart with `GetOrCreateCart::run(...)` and places the order with `Kinkoza\Sales\Actions\CheckoutCart::run(...)`. The Checkout action delegates the atomic order, invoice, inventory, and cart-conversion work to Sales' internal `CheckoutService`. Successful checkout redirects to the owned order confirmation; expected domain failures become stable user messages, while unexpected exceptions are reported and hidden behind a generic message.
+Locks the cart identifier, cart version, and a generated ULID idempotency key at mount time. It resolves the cart with `GetOrCreateCart::run(...)` and places the order with `Kinkoza\Sales\Actions\CheckoutCart::run(...)`. The Checkout action performs the atomic order, invoice, inventory, and cart-conversion work directly. Successful checkout redirects to the owned order confirmation; expected domain failures become stable user messages, while unexpected exceptions are reported and hidden behind a generic message.
 
 ### `OrderConfirmation`
 
@@ -125,12 +125,12 @@ Render a component from another Blade view through the registered namespace:
 <livewire:storefront::listings-index />
 ```
 
-Application code should call the owning Catalog, Cart, or Sales action through `::run(...)` instead of invoking a Livewire component or reaching into another module's internal service.
+Application code should call the owning Catalog, Cart, or Sales action through `::run(...)` instead of invoking a Livewire component or bypassing the action boundary.
 
 ## Extending the module
 
 - Add page-level orchestration under `src/Http/Livewire` and keep reusable business rules in the domain that owns them.
-- Call an owning module's action through its typed `::run(...)` entry point. Add a new domain action there when no existing use case fits; do not couple Storefront to an internal transactional service.
+- Call an owning module's action through its typed `::run(...)` entry point. Add a new domain action there when no existing use case fits; do not bypass its workflow boundary.
 - Add non-Livewire route handlers as focused actions under `src/Actions` and mount the action class directly in `storefront-routes.php`.
 - Add a matching Blade template under `resources/views/livewire` and a named route under `routes/storefront-routes.php`.
 - Apply explicit authentication, verification, authorization, and a named rate limiter before exposing new state-changing actions.
