@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "25addb2a934bf8a5ac84f63e3c967044",
+    "content-hash": "f67d1af376f15b37ad5e591abbb66826",
     "packages": [
         {
             "name": "bacon/bacon-qr-code",
@@ -2014,7 +2014,10 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/cart",
-                "reference": "c75a5865c336d5c03008f866c15f3f8e1c1fabe5"
+                "reference": "e2cd8b6406b57e2cc7dbde22091f0f2fe860f28e"
+            },
+            "require": {
+                "kinkoza/catalog": "*"
             },
             "type": "library",
             "extra": {
@@ -2046,7 +2049,18 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/catalog",
-                "reference": "82a284b9c0dc201c7be5411e9f32e06eb1d2ac19"
+                "reference": "a59d0f190eb2351fbf7cb7fd9fa270299cf68f68"
+            },
+            "require": {
+                "illuminate/cache": "^13.0",
+                "illuminate/database": "^13.0",
+                "illuminate/support": "^13.0",
+                "php": "^8.4"
+            },
+            "require-dev": {
+                "fakerphp/faker": "^1.24",
+                "pestphp/pest": "^5.1",
+                "pestphp/pest-plugin-laravel": "^5.0"
             },
             "type": "library",
             "extra": {
@@ -2067,6 +2081,7 @@
             "license": [
                 "proprietary"
             ],
+            "description": "Catalog domain for marketplace listings.",
             "transport-options": {
                 "symlink": true,
                 "relative": true
@@ -2078,7 +2093,11 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/sales",
-                "reference": "0ab863cf2f6f9fa2e198426ad5c1194c42fa481e"
+                "reference": "3b91dcd98f0a5bbb6d18bb1123ba2bdd90613205"
+            },
+            "require": {
+                "kinkoza/cart": "^1.0",
+                "kinkoza/catalog": "^1.0"
             },
             "type": "library",
             "extra": {
@@ -2110,7 +2129,12 @@
             "dist": {
                 "type": "path",
                 "url": "app-modules/storefront",
-                "reference": "398ac31ba942f51ac9e10e245d3a40b998a544c2"
+                "reference": "ba073ab3e693021fa45bc140fa85d0f4539674d9"
+            },
+            "require": {
+                "kinkoza/cart": "^1.0",
+                "kinkoza/catalog": "^1.0",
+                "kinkoza/sales": "^1.0"
             },
             "type": "library",
             "extra": {

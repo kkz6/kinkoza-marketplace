@@ -1,20 +1,22 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/livewire-starter-kit",
+    "name": "kinkoza/marketplace",
     "type": "project",
-    "description": "The official Laravel starter kit for Livewire.",
+    "description": "A modular B2B marketplace for verified business assets.",
     "keywords": [
         "laravel",
-        "framework"
+        "framework",
+        "livewire",
+        "marketplace"
     ],
     "license": "MIT",
     "require": {
         "php": "^8.4",
         "internachi/modular": "^3.0",
-        "kinkoza/cart": "*",
-        "kinkoza/catalog": "*",
-        "kinkoza/sales": "*",
-        "kinkoza/storefront": "*",
+        "kinkoza/cart": "^1.0",
+        "kinkoza/catalog": "^1.0",
+        "kinkoza/sales": "^1.0",
+        "kinkoza/storefront": "^1.0",
         "laravel/chisel": "^0.1.0",
         "laravel/fortify": "^1.37.2",
         "laravel/framework": "^13.17",
