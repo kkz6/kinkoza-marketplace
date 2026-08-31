@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Kinkoza\Cart\Models;
 
 use App\Models\Concerns\HasUlidAndSequence;
+use Illuminate\Database\Eloquent\Attributes\Guarded;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -28,22 +29,11 @@ use Kinkoza\Catalog\Models\Listing;
  * @property-read Cart $cart
  * @property-read Listing|null $listing
  */
+#[Guarded(['*'])]
 class CartItem extends Model
 {
     /** @use HasFactory<CartItemFactory> */
     use HasFactory, HasUlidAndSequence;
-
-    /** @var list<string> */
-    protected $fillable = [
-        'cart_id',
-        'listing_id',
-        'sku',
-        'title',
-        'currency',
-        'unit_price_minor',
-        'line_total_minor',
-        'quantity',
-    ];
 
     protected static function newFactory(): CartItemFactory
     {

@@ -6,6 +6,7 @@ namespace Kinkoza\Cart\Services;
 
 use App\Models\User;
 use BackedEnum;
+use DomainException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -55,6 +56,7 @@ class CartService implements CartServiceInterface
         $this->assertPositiveQuantity($quantity);
 
         if ($buyer) {
+            $this->assertListingNotOwnedByBuyer($listing, (string) $buyer->getKey());
             $this->getOrCreateFor($buyer, $guestToken);
         }
 
@@ -76,6 +78,7 @@ class CartService implements CartServiceInterface
                 $this->assertVersion($cart, $expectedVersion);
 
                 $lockedListing = $this->lockPublishedListing((string) $listing->getKey());
+                $this->assertListingNotOwnedByBuyer($lockedListing, $buyerId);
                 $listingCurrency = $this->currencyOf($lockedListing);
                 $listingPriceMinor = $this->listingPriceMinor($lockedListing);
 
@@ -102,7 +105,7 @@ class CartService implements CartServiceInterface
                 }
 
                 if (! $item) {
-                    CartItem::query()->create([
+                    CartItem::query()->forceCreate([
                         'cart_id' => $cart->getKey(),
                         'listing_id' => $lockedListing->getKey(),
                         'sku' => (string) $lockedListing->getKey(),
@@ -222,17 +225,19 @@ class CartService implements CartServiceInterface
             return $cart;
         }
 
-        $cart = Cart::query()->createOrFirst(
-            ['active_key' => $activeKey],
-            [
-                'buyer_id' => $buyerId,
-                'guest_token' => $guestToken,
-                'currency' => $this->defaultCurrency(),
-                'status' => CartStatus::Active,
-                'subtotal_minor' => 0,
-                'total_minor' => 0,
-                'version' => 1,
-            ],
+        $cart = Cart::unguarded(
+            fn (): Cart => Cart::query()->createOrFirst(
+                ['active_key' => $activeKey],
+                [
+                    'buyer_id' => $buyerId,
+                    'guest_token' => $guestToken,
+                    'currency' => $this->defaultCurrency(),
+                    'status' => CartStatus::Active,
+                    'subtotal_minor' => 0,
+                    'total_minor' => 0,
+                    'version' => 1,
+                ],
+            ),
         );
 
         $this->assertActive($cart);
@@ -289,6 +294,68 @@ class CartService implements CartServiceInterface
             return $this->adoptGuestCart($guestCart, $buyerId, $buyerKey);
         }
 
+        $buyerItemReferences = CartItem::query()
+            ->where('cart_id', $buyerCart->getKey())
+            ->orderBy('id')
+            ->get();
+        $guestItemReferences = CartItem::query()
+            ->where('cart_id', $guestCart->getKey())
+            ->orderBy('id')
+            ->get();
+
+        if ($guestItemReferences->isEmpty()) {
+            $this->abandon($guestCart);
+
+            return $buyerCart;
+        }
+
+        if ($buyerItemReferences->isEmpty()) {
+            $this->abandon($buyerCart);
+
+            return $this->adoptGuestCart($guestCart, $buyerId, $buyerKey);
+        }
+
+        if ($buyerCart->currency !== $guestCart->currency) {
+            return $buyerCart;
+        }
+
+        $listingIds = $buyerItemReferences
+            ->concat($guestItemReferences)
+            ->pluck('listing_id')
+            ->filter()
+            ->map(fn (mixed $listingId): string => (string) $listingId)
+            ->unique()
+            ->sort()
+            ->values();
+        $listings = Listing::query()
+            ->published()
+            ->whereIn('id', $listingIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        if ($listings->count() !== $listingIds->count()) {
+            return $buyerCart;
+        }
+
+        $buyerItemsByListing = $buyerItemReferences->keyBy('listing_id');
+
+        foreach ($guestItemReferences as $guestItem) {
+            $buyerItem = $buyerItemsByListing->get($guestItem->listing_id);
+            $quantity = $guestItem->quantity;
+
+            if ($buyerItem instanceof CartItem) {
+                $quantity += $buyerItem->quantity;
+            }
+
+            $listing = $listings->get($guestItem->listing_id);
+
+            if (! $listing instanceof Listing || $quantity > $this->listingInventoryQuantity($listing)) {
+                return $buyerCart;
+            }
+        }
+
         $buyerItems = CartItem::query()
             ->where('cart_id', $buyerCart->getKey())
             ->orderBy('id')
@@ -299,19 +366,6 @@ class CartService implements CartServiceInterface
             ->orderBy('id')
             ->lockForUpdate()
             ->get();
-
-        if ($guestItems->isEmpty()) {
-            $this->abandon($guestCart);
-
-            return $buyerCart;
-        }
-
-        if ($buyerItems->isEmpty() || $buyerCart->currency !== $guestCart->currency) {
-            $this->abandon($buyerCart);
-
-            return $this->adoptGuestCart($guestCart, $buyerId, $buyerKey);
-        }
-
         $buyerItemsByListing = $buyerItems->keyBy('listing_id');
 
         foreach ($guestItems as $guestItem) {
@@ -423,6 +477,15 @@ class CartService implements CartServiceInterface
             $requestedQuantity,
             $availableQuantity,
         );
+    }
+
+    private function assertListingNotOwnedByBuyer(Listing $listing, ?string $buyerId): void
+    {
+        if ($buyerId === null || (string) $listing->getAttribute('seller_id') !== $buyerId) {
+            return;
+        }
+
+        throw new DomainException('You cannot purchase your own listing.');
     }
 
     private function assertVersion(Cart $cart, ?int $expectedVersion): void

@@ -6,6 +6,7 @@ namespace Kinkoza\Cart\Models;
 
 use App\Models\Concerns\HasUlidAndSequence;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Attributes\Guarded;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,23 +33,11 @@ use Kinkoza\Cart\Enums\CartStatus;
  * @property-read User|null $buyer
  * @property-read Collection<int, CartItem> $items
  */
+#[Guarded(['*'])]
 class Cart extends Model
 {
     /** @use HasFactory<CartFactory> */
     use HasFactory, HasUlidAndSequence;
-
-    /** @var list<string> */
-    protected $fillable = [
-        'buyer_id',
-        'guest_token',
-        'active_key',
-        'currency',
-        'status',
-        'subtotal_minor',
-        'total_minor',
-        'version',
-        'converted_at',
-    ];
 
     protected static function newFactory(): CartFactory
     {

@@ -69,6 +69,18 @@ test('quantity cannot exceed locked listing inventory', function (): void {
     expect(Cart::query()->count())->toBe(0);
 });
 
+test('an authenticated seller cannot add their own listing', function (): void {
+    $seller = User::factory()->verifiedSeller()->create();
+    $listing = Listing::factory()
+        ->for($seller, 'seller')
+        ->create();
+
+    expect(fn () => $this->cartService->add($listing, 1, $seller, $this->guestToken))
+        ->toThrow(DomainException::class, 'You cannot purchase your own listing.');
+
+    expect(Cart::query()->count())->toBe(0);
+});
+
 test('stale cart versions are rejected without changing an item', function (): void {
     $listing = Listing::factory()->create([
         'inventory_quantity' => 10,
@@ -153,6 +165,48 @@ test('guest items merge into an existing buyer cart', function (): void {
         ->and($mergedCart->total_minor)->toBe(5_000)
         ->and($guestCart->fresh()->status)->toBe(CartStatus::Abandoned)
         ->and($guestCart->fresh()->active_key)->toBeNull();
+});
+
+test('different currency carts remain intact when a guest signs in', function (): void {
+    $buyer = User::factory()->create();
+    $euroListing = Listing::factory()->create([
+        'currency' => 'EUR',
+        'price_minor' => 1_000,
+        'inventory_quantity' => 10,
+    ]);
+    $sterlingListing = Listing::factory()->create([
+        'currency' => 'GBP',
+        'price_minor' => 2_000,
+        'inventory_quantity' => 10,
+    ]);
+    $buyerCart = $this->cartService->add($euroListing, 1, $buyer, (string) Str::ulid());
+    $guestCart = $this->cartService->add($sterlingListing, 2, null, $this->guestToken);
+
+    $restoredCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+
+    expect($restoredCart->is($buyerCart))->toBeTrue()
+        ->and($buyerCart->fresh()->status)->toBe(CartStatus::Active)
+        ->and($buyerCart->fresh()->items)->toHaveCount(1)
+        ->and($guestCart->fresh()->status)->toBe(CartStatus::Active)
+        ->and($guestCart->fresh()->items)->toHaveCount(1);
+});
+
+test('an overstocked guest merge leaves both carts intact', function (): void {
+    $buyer = User::factory()->create();
+    $listing = Listing::factory()->create([
+        'currency' => 'EUR',
+        'price_minor' => 1_000,
+        'inventory_quantity' => 3,
+    ]);
+    $buyerCart = $this->cartService->add($listing, 2, $buyer, (string) Str::ulid());
+    $guestCart = $this->cartService->add($listing, 2, null, $this->guestToken);
+
+    $restoredCart = $this->cartService->getOrCreateFor($buyer, $this->guestToken);
+
+    expect($restoredCart->is($buyerCart))->toBeTrue()
+        ->and($buyerCart->fresh()->items->sole()->quantity)->toBe(2)
+        ->and($guestCart->fresh()->status)->toBe(CartStatus::Active)
+        ->and($guestCart->fresh()->items->sole()->quantity)->toBe(2);
 });
 
 test('quantity updates and removal recompute totals and versions', function (): void {
