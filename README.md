@@ -20,14 +20,14 @@ Local Laravel Herd site: [https://kinkoza.test](https://kinkoza.test)
 
 ## Architecture
 
-The application is a Laravel host with four Composer path packages under `app-modules/`. Each module owns its domain code, migrations, service provider, and Pest feature tests.
+The application is a Laravel host with four Composer path packages under `app-modules/`. Each package owns its domain or presentation code, service provider, and Pest feature tests; persistence-owning modules also own their migrations.
 
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
-| `catalog` | Listings, publication rules, seller policy, categories, currencies, countries, and featured-listing cache | Host user model |
-| `cart` | Guest/buyer cart identity, line snapshots, totals, versions, and cart mutation locks | `catalog` |
-| `sales` | Checkout, inventory allocation, orders, invoices, events, and confirmation notifications | `cart`, `catalog` |
-| `storefront` | Livewire pages, filters, cart and checkout interactions, locale switching, and route boundaries | `catalog`, `cart`, `sales` |
+| [`catalog`](app-modules/catalog/README.md) | Listings, publication rules, seller policy, categories, currencies, countries, and featured-listing cache | Host user model |
+| [`cart`](app-modules/cart/README.md) | Guest/buyer cart identity, line snapshots, totals, versions, and cart mutation locks | `catalog` |
+| [`sales`](app-modules/sales/README.md) | Checkout, inventory allocation, orders, invoices, events, and confirmation notifications | `cart`, `catalog` |
+| [`storefront`](app-modules/storefront/README.md) | Livewire pages, filters, cart and checkout interactions, locale switching, and route boundaries | `catalog`, `cart`, `sales` |
 
 The host application owns cross-cutting concerns: users and authentication, locale middleware, per-entity numeric sequences, framework configuration, and frontend assets. Module contracts are bound to their implementations in service providers, which keeps the Livewire layer dependent on interfaces rather than concrete domain services.
 
