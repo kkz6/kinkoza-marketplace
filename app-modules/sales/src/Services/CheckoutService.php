@@ -18,6 +18,7 @@ use Kinkoza\Cart\Exceptions\CartNotActive;
 use Kinkoza\Cart\Exceptions\CurrencyMismatch;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
+use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Models\Listing;
@@ -37,34 +38,56 @@ class CheckoutService implements CheckoutServiceInterface
 
     public function __construct(private readonly SequenceGenerator $sequences) {}
 
-    public function checkout(Cart $cart, User $buyer, string $idempotencyKey): Order
-    {
+    public function checkout(
+        Cart $cart,
+        User $buyer,
+        string $idempotencyKey,
+        int $expectedVersion,
+    ): Order {
         $idempotencyKey = trim($idempotencyKey);
 
         $this->assertValidIdempotencyKey($idempotencyKey);
 
         $existingOrder = Order::query()
+            ->where('buyer_id', $buyer->getKey())
             ->where('idempotency_key', $idempotencyKey)
             ->first();
 
         if ($existingOrder) {
-            return $this->assertOrderBelongsToBuyer($existingOrder, $buyer);
+            return $this->assertOrderMatchesRequest($existingOrder, $buyer, $cart);
         }
 
+        $existingOrder = Order::query()
+            ->where('cart_id', $cart->getKey())
+            ->first();
+
+        if ($existingOrder) {
+            return $this->assertOrderMatchesRequest($existingOrder, $buyer, $cart);
+        }
+
+        $preflightCart = Cart::query()->findOrFail($cart->getKey());
+
+        $this->assertCartOwnedByBuyer($preflightCart, $buyer);
+        $this->assertCartActive($preflightCart);
+        $this->assertCartVersion($preflightCart, $expectedVersion);
+
+        $sequenceAllocation = $this->reserveSequences($preflightCart);
+
         try {
-            return DB::transaction(function () use ($buyer, $cart, $idempotencyKey): Order {
+            return DB::transaction(function () use ($buyer, $cart, $expectedVersion, $idempotencyKey, $sequenceAllocation): Order {
                 $lockedCart = Cart::query()
                     ->whereKey($cart->getKey())
                     ->lockForUpdate()
                     ->firstOrFail();
 
                 $existingOrder = Order::query()
+                    ->where('buyer_id', $buyer->getKey())
                     ->where('idempotency_key', $idempotencyKey)
                     ->lockForUpdate()
                     ->first();
 
                 if ($existingOrder) {
-                    return $this->assertOrderBelongsToBuyer($existingOrder, $buyer);
+                    return $this->assertOrderMatchesRequest($existingOrder, $buyer, $lockedCart);
                 }
 
                 $existingOrder = Order::query()
@@ -73,11 +96,12 @@ class CheckoutService implements CheckoutServiceInterface
                     ->first();
 
                 if ($existingOrder) {
-                    return $this->assertOrderBelongsToBuyer($existingOrder, $buyer);
+                    return $this->assertOrderMatchesRequest($existingOrder, $buyer, $lockedCart);
                 }
 
                 $this->assertCartOwnedByBuyer($lockedCart, $buyer);
                 $this->assertCartActive($lockedCart);
+                $this->assertCartVersion($lockedCart, $expectedVersion);
 
                 $itemReferences = CartItem::query()
                     ->where('cart_id', $lockedCart->getKey())
@@ -99,13 +123,19 @@ class CheckoutService implements CheckoutServiceInterface
                     throw new DomainException('An empty cart cannot be checked out.');
                 }
 
-                $lines = $this->allocateLineGraph($cartItems, $listings, $lockedCart);
+                $lines = $this->allocateLineGraph(
+                    $cartItems,
+                    $listings,
+                    $lockedCart,
+                    $sequenceAllocation['order_items'],
+                    $sequenceAllocation['invoice_items'],
+                );
                 $subtotalMinor = array_sum(array_column($lines, 'line_total_minor'));
                 $placedAt = now();
                 $orderId = (string) Str::ulid();
                 $invoiceId = (string) Str::ulid();
-                $orderSequence = $this->sequences->next('orders');
-                $invoiceSequence = $this->sequences->next('invoices');
+                $orderSequence = $sequenceAllocation['order'];
+                $invoiceSequence = $sequenceAllocation['invoice'];
 
                 $order = Order::query()->create([
                     'id' => $orderId,
@@ -178,7 +208,11 @@ class CheckoutService implements CheckoutServiceInterface
             }, self::TRANSACTION_ATTEMPTS);
         } catch (UniqueConstraintViolationException $exception) {
             $existingOrder = Order::query()
-                ->where('idempotency_key', $idempotencyKey)
+                ->where(function ($query) use ($buyer, $idempotencyKey): void {
+                    $query
+                        ->where('buyer_id', $buyer->getKey())
+                        ->where('idempotency_key', $idempotencyKey);
+                })
                 ->orWhere('cart_id', $cart->getKey())
                 ->first();
 
@@ -186,7 +220,7 @@ class CheckoutService implements CheckoutServiceInterface
                 throw $exception;
             }
 
-            return $this->assertOrderBelongsToBuyer($existingOrder, $buyer);
+            return $this->assertOrderMatchesRequest($existingOrder, $buyer, $cart);
         }
     }
 
@@ -229,6 +263,8 @@ class CheckoutService implements CheckoutServiceInterface
     /**
      * @param  EloquentCollection<int, CartItem>  $cartItems
      * @param  EloquentCollection<string, Listing>  $listings
+     * @param  list<int>  $orderItemSequences
+     * @param  list<int>  $invoiceItemSequences
      * @return list<array{
      *     order_item_id: string,
      *     order_item_sequence: int,
@@ -247,11 +283,21 @@ class CheckoutService implements CheckoutServiceInterface
         EloquentCollection $cartItems,
         EloquentCollection $listings,
         Cart $cart,
+        array $orderItemSequences,
+        array $invoiceItemSequences,
     ): array {
         $cartCurrency = $this->currencyOf($cart->currency);
+
+        if (
+            count($orderItemSequences) !== $cartItems->count()
+            || count($invoiceItemSequences) !== $cartItems->count()
+        ) {
+            throw new DomainException('The cart changed before its sequence range was reserved.');
+        }
+
         $lines = [];
 
-        foreach ($cartItems as $cartItem) {
+        foreach ($cartItems->values() as $index => $cartItem) {
             $listingId = (string) $cartItem->listing_id;
             $listing = $listings->get($listingId);
 
@@ -261,6 +307,7 @@ class CheckoutService implements CheckoutServiceInterface
 
             $quantity = (int) $cartItem->quantity;
             $listingCurrency = $this->listingCurrency($listing);
+            $lineCurrency = $this->currencyOf($cartItem->getAttribute('currency'));
             $availableQuantity = $this->listingInventoryQuantity($listing);
 
             if ($quantity < 1) {
@@ -271,21 +318,25 @@ class CheckoutService implements CheckoutServiceInterface
                 throw CurrencyMismatch::forCurrencies($cartCurrency, $listingCurrency);
             }
 
+            if ($lineCurrency !== $cartCurrency) {
+                throw CurrencyMismatch::forCurrencies($cartCurrency, $lineCurrency);
+            }
+
             if ($quantity > $availableQuantity) {
                 throw InsufficientInventory::forListing($listingId, $quantity, $availableQuantity);
             }
 
-            $unitPriceMinor = $this->listingPriceMinor($listing);
+            $unitPriceMinor = $this->cartItemUnitPriceMinor($cartItem);
 
             $lines[] = [
                 'order_item_id' => (string) Str::ulid(),
-                'order_item_sequence' => $this->sequences->next('order_items'),
+                'order_item_sequence' => $orderItemSequences[$index],
                 'invoice_item_id' => (string) Str::ulid(),
-                'invoice_item_sequence' => $this->sequences->next('invoice_items'),
+                'invoice_item_sequence' => $invoiceItemSequences[$index],
                 'listing_id' => $listingId,
                 'seller_id' => $this->listingSellerId($listing),
-                'title' => $this->listingTitle($listing),
-                'currency' => $listingCurrency,
+                'title' => $this->cartItemTitle($cartItem),
+                'currency' => $lineCurrency,
                 'unit_price_minor' => $unitPriceMinor,
                 'quantity' => $quantity,
                 'line_total_minor' => $unitPriceMinor * $quantity,
@@ -330,13 +381,16 @@ class CheckoutService implements CheckoutServiceInterface
         }
     }
 
-    private function assertOrderBelongsToBuyer(Order $order, User $buyer): Order
+    private function assertOrderMatchesRequest(Order $order, User $buyer, Cart $cart): Order
     {
-        if ($this->orderBuyerId($order) === (string) $buyer->getKey()) {
+        if (
+            $this->orderBuyerId($order) === (string) $buyer->getKey()
+            && (string) $order->getAttribute('cart_id') === (string) $cart->getKey()
+        ) {
             return $order->loadMissing(['items', 'invoice.items']);
         }
 
-        throw new DomainException('The idempotency key belongs to another buyer.');
+        throw new DomainException('The idempotency key does not match this cart.');
     }
 
     private function assertCartOwnedByBuyer(Cart $cart, User $buyer): void
@@ -355,6 +409,41 @@ class CheckoutService implements CheckoutServiceInterface
         }
 
         throw CartNotActive::forCart((string) $cart->getKey());
+    }
+
+    private function assertCartVersion(Cart $cart, int $expectedVersion): void
+    {
+        if ($cart->version === $expectedVersion) {
+            return;
+        }
+
+        throw StaleCartVersion::forVersions($expectedVersion, $cart->version);
+    }
+
+    /**
+     * @return array{
+     *     order: int,
+     *     invoice: int,
+     *     order_items: list<int>,
+     *     invoice_items: list<int>
+     * }
+     */
+    private function reserveSequences(Cart $cart): array
+    {
+        $lineCount = CartItem::query()
+            ->where('cart_id', $cart->getKey())
+            ->count();
+
+        if ($lineCount < 1) {
+            throw new DomainException('An empty cart cannot be checked out.');
+        }
+
+        return [
+            'order' => $this->sequences->next('orders'),
+            'invoice' => $this->sequences->next('invoices'),
+            'order_items' => $this->sequences->reserve('order_items', $lineCount),
+            'invoice_items' => $this->sequences->reserve('invoice_items', $lineCount),
+        ];
     }
 
     private function assertValidIdempotencyKey(string $idempotencyKey): void
@@ -395,12 +484,12 @@ class CheckoutService implements CheckoutServiceInterface
         return $inventoryQuantity;
     }
 
-    private function listingPriceMinor(Listing $listing): int
+    private function cartItemUnitPriceMinor(CartItem $cartItem): int
     {
-        $priceMinor = $listing->getAttribute('price_minor');
+        $priceMinor = $cartItem->getAttribute('unit_price_minor');
 
         if (! is_int($priceMinor)) {
-            throw new UnexpectedValueException('Listing price must be an integer minor-unit amount.');
+            throw new UnexpectedValueException('Cart item price must be an integer minor-unit amount.');
         }
 
         return $priceMinor;
@@ -417,12 +506,12 @@ class CheckoutService implements CheckoutServiceInterface
         return $sellerId;
     }
 
-    private function listingTitle(Listing $listing): string
+    private function cartItemTitle(CartItem $cartItem): string
     {
-        $title = $listing->getAttribute('title');
+        $title = $cartItem->getAttribute('title');
 
         if (! is_string($title)) {
-            throw new UnexpectedValueException('Listing title must be a string.');
+            throw new UnexpectedValueException('Cart item title must be a string.');
         }
 
         return $title;

@@ -9,11 +9,21 @@ class SequenceGenerator
 {
     public function next(string $name): int
     {
+        return $this->reserve($name, 1)[0];
+    }
+
+    /** @return list<int> */
+    public function reserve(string $name, int $count): array
+    {
         if (blank($name)) {
             throw new InvalidArgumentException('A sequence name is required.');
         }
 
-        return DB::transaction(function () use ($name): int {
+        if ($count < 1) {
+            throw new InvalidArgumentException('A positive sequence range is required.');
+        }
+
+        return DB::transaction(function () use ($count, $name): array {
             $now = now();
 
             DB::table('sequences')->insertOrIgnore([
@@ -28,16 +38,17 @@ class SequenceGenerator
                 ->lockForUpdate()
                 ->value('value');
 
-            $next = (int) $current + 1;
+            $first = (int) $current + 1;
+            $last = (int) $current + $count;
 
             DB::table('sequences')
                 ->where('name', $name)
                 ->update([
-                    'value' => $next,
+                    'value' => $last,
                     'updated_at' => $now,
                 ]);
 
-            return $next;
+            return range($first, $last);
         }, attempts: 5);
     }
 }

@@ -8,6 +8,7 @@ use Illuminate\Support\Str;
 use Kinkoza\Cart\Enums\CartStatus;
 use Kinkoza\Cart\Exceptions\InsufficientInventory;
 use Kinkoza\Cart\Exceptions\ListingUnavailable;
+use Kinkoza\Cart\Exceptions\StaleCartVersion;
 use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Models\Listing;
@@ -69,6 +70,7 @@ test('checkout creates the complete immutable order and invoice graph', function
         $fixture['cart'],
         $buyer,
         $idempotencyKey,
+        $fixture['cart']->version,
     );
 
     expect(Str::isUlid((string) $order->getKey()))->toBeTrue()
@@ -126,6 +128,7 @@ test('checkout decrements inventory and advances the listing version', function 
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),
+        $fixture['cart']->version,
     );
 
     expect($fixture['listing']->fresh()->inventory_quantity)->toBe(4)
@@ -141,6 +144,7 @@ test('checkout rejects a cart owned by another buyer', function () {
         $fixture['cart'],
         $intruder,
         (string) Str::ulid(),
+        $fixture['cart']->version,
     ))->toThrow(DomainException::class, 'The cart does not belong to this buyer.');
 
     expect(Order::query()->count())->toBe(0)
@@ -154,9 +158,9 @@ test('checkout is idempotent by key and cart', function () {
     $idempotencyKey = (string) Str::ulid();
     $service = resolve(CheckoutServiceInterface::class);
 
-    $firstOrder = $service->checkout($fixture['cart'], $buyer, $idempotencyKey);
-    $sameKeyOrder = $service->checkout($fixture['cart'], $buyer, $idempotencyKey);
-    $sameCartOrder = $service->checkout($fixture['cart'], $buyer, (string) Str::ulid());
+    $firstOrder = $service->checkout($fixture['cart'], $buyer, $idempotencyKey, $fixture['cart']->version);
+    $sameKeyOrder = $service->checkout($fixture['cart'], $buyer, $idempotencyKey, $fixture['cart']->version);
+    $sameCartOrder = $service->checkout($fixture['cart'], $buyer, (string) Str::ulid(), $fixture['cart']->version);
 
     expect($sameKeyOrder->is($firstOrder))->toBeTrue()
         ->and($sameCartOrder->is($firstOrder))->toBeTrue()
@@ -165,6 +169,57 @@ test('checkout is idempotent by key and cart', function () {
         ->and(Invoice::query()->count())->toBe(1)
         ->and(InvoiceItem::query()->count())->toBe(1)
         ->and($fixture['listing']->fresh()->inventory_quantity)->toBe(9);
+});
+
+test('an idempotency key cannot be replayed for another cart owned by the same buyer', function () {
+    $buyer = User::factory()->create();
+    $firstFixture = salesCheckoutFixture($buyer);
+    $idempotencyKey = (string) Str::ulid();
+    $service = resolve(CheckoutServiceInterface::class);
+
+    $service->checkout(
+        $firstFixture['cart'],
+        $buyer,
+        $idempotencyKey,
+        $firstFixture['cart']->version,
+    );
+    $secondFixture = salesCheckoutFixture($buyer);
+
+    expect(fn (): Order => $service->checkout(
+        $secondFixture['cart'],
+        $buyer,
+        $idempotencyKey,
+        $secondFixture['cart']->version,
+    ))->toThrow(DomainException::class, 'The idempotency key does not match this cart.');
+
+    expect(Order::query()->count())->toBe(1)
+        ->and($secondFixture['cart']->fresh()->status)->toBe(CartStatus::Active)
+        ->and($secondFixture['listing']->fresh()->inventory_quantity)->toBe(10);
+});
+
+test('different buyers may safely use the same idempotency key', function () {
+    $firstBuyer = User::factory()->create();
+    $secondBuyer = User::factory()->create();
+    $firstFixture = salesCheckoutFixture($firstBuyer);
+    $secondFixture = salesCheckoutFixture($secondBuyer);
+    $idempotencyKey = (string) Str::ulid();
+    $service = resolve(CheckoutServiceInterface::class);
+
+    $firstOrder = $service->checkout(
+        $firstFixture['cart'],
+        $firstBuyer,
+        $idempotencyKey,
+        $firstFixture['cart']->version,
+    );
+    $secondOrder = $service->checkout(
+        $secondFixture['cart'],
+        $secondBuyer,
+        $idempotencyKey,
+        $secondFixture['cart']->version,
+    );
+
+    expect($secondOrder->isNot($firstOrder))->toBeTrue()
+        ->and(Order::query()->count())->toBe(2);
 });
 
 test('insufficient inventory rolls back the entire checkout', function () {
@@ -179,6 +234,7 @@ test('insufficient inventory rolls back the entire checkout', function () {
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),
+        $fixture['cart']->version,
     ))->toThrow(InsufficientInventory::class);
 
     expect(Order::query()->count())->toBe(0)
@@ -201,8 +257,53 @@ test('checkout revalidates that every listing is still published', function () {
         $fixture['cart'],
         $buyer,
         (string) Str::ulid(),
+        $fixture['cart']->version,
     ))->toThrow(ListingUnavailable::class);
 
     expect(Order::query()->count())->toBe(0)
         ->and($fixture['cart']->fresh()->status)->toBe(CartStatus::Active);
+});
+
+test('checkout rejects a cart changed after the buyer reviewed it', function () {
+    $buyer = User::factory()->create();
+    $fixture = salesCheckoutFixture($buyer);
+    $reviewedVersion = $fixture['cart']->version;
+
+    Cart::query()
+        ->whereKey($fixture['cart']->getKey())
+        ->increment('version');
+
+    expect(fn (): Order => resolve(CheckoutServiceInterface::class)->checkout(
+        $fixture['cart'],
+        $buyer,
+        (string) Str::ulid(),
+        $reviewedVersion,
+    ))->toThrow(StaleCartVersion::class);
+
+    expect(Order::query()->count())->toBe(0)
+        ->and($fixture['listing']->fresh()->inventory_quantity)->toBe(10);
+});
+
+test('checkout honours the price snapshot accepted in the cart', function () {
+    $buyer = User::factory()->create();
+    $fixture = salesCheckoutFixture($buyer, 2, [
+        'title' => 'Original machine title',
+        'price_minor' => 45_000,
+    ]);
+
+    $fixture['listing']->forceFill([
+        'title' => 'Updated machine title',
+        'price_minor' => 90_000,
+    ])->save();
+
+    $order = resolve(CheckoutServiceInterface::class)->checkout(
+        $fixture['cart'],
+        $buyer,
+        (string) Str::ulid(),
+        $fixture['cart']->version,
+    );
+
+    expect($order->total_minor)->toBe(90_000)
+        ->and($order->items->sole()->title)->toBe('Original machine title')
+        ->and($order->items->sole()->unit_price_minor)->toBe(45_000);
 });

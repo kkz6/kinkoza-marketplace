@@ -10,5 +10,10 @@ use Kinkoza\Sales\Models\Order;
 
 interface CheckoutServiceInterface
 {
-    public function checkout(Cart $cart, User $buyer, string $idempotencyKey): Order;
+    public function checkout(
+        Cart $cart,
+        User $buyer,
+        string $idempotencyKey,
+        int $expectedVersion,
+    ): Order;
 }

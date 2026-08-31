@@ -20,6 +20,10 @@ return new class extends Migration
             $table->unsignedInteger('quantity');
             $table->unsignedBigInteger('line_total_minor');
             $table->timestamps();
+
+            $table->index('order_id');
+            $table->index('listing_id');
+            $table->index('seller_id');
         });
     }
 };

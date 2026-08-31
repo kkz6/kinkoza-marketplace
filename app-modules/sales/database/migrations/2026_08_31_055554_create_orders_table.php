@@ -14,7 +14,7 @@ return new class extends Migration
             $table->string('number', 12)->unique();
             $table->foreignUlid('buyer_id')->constrained('users')->restrictOnDelete();
             $table->foreignUlid('cart_id')->constrained('carts')->restrictOnDelete();
-            $table->string('idempotency_key', 64)->unique();
+            $table->string('idempotency_key', 64);
             $table->enum('status', ['pending', 'confirmed', 'cancelled'])->index();
             $table->char('currency', 3);
             $table->unsignedBigInteger('subtotal_minor');
@@ -23,6 +23,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique('cart_id');
+            $table->unique(['buyer_id', 'idempotency_key']);
         });
     }
 };
