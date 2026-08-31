@@ -37,7 +37,7 @@ test('a verified seller can publish a listing with a unique slug', function () {
         onlineAt: CarbonImmutable::parse('2026-08-31 10:00:00'),
     ));
 
-    expect($listing->slug)->toBe('five-axis-cnc-machine')
+    expect($listing->slug)->toBe('five-axis-cnc-machine-1')
         ->and($listing->status)->toBe(ListingStatus::Published)
         ->and($listing->currency)->toBe(Currency::EUR)
         ->and($listing->price_minor)->toBe(12_500_000)

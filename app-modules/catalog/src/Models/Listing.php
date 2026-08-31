@@ -4,7 +4,8 @@ namespace Kinkoza\Catalog\Models;
 
 use App\Models\Concerns\HasUlidAndSequence;
 use App\Models\User;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Attributes\Guarded;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,23 +17,27 @@ use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Catalog\Enums\ListingCategory;
 use Kinkoza\Catalog\Enums\ListingStatus;
 
-#[Fillable([
-    'seller_id',
-    'title',
-    'slug',
-    'description',
-    'category',
-    'status',
-    'currency',
-    'price_minor',
-    'country',
-    'city',
-    'online_at',
-    'offline_at',
-    'inventory_quantity',
-    'image_url',
-    'version',
-])]
+/**
+ * @property string $id
+ * @property int $sequence
+ * @property string $seller_id
+ * @property string $title
+ * @property string $slug
+ * @property string $description
+ * @property ListingCategory $category
+ * @property ListingStatus $status
+ * @property Currency $currency
+ * @property int $price_minor
+ * @property Country $country
+ * @property string $city
+ * @property CarbonImmutable|null $online_at
+ * @property CarbonImmutable|null $offline_at
+ * @property int $inventory_quantity
+ * @property string|null $image_url
+ * @property int $version
+ * @property-read User $seller
+ */
+#[Guarded(['id', 'sequence', 'seller_id', 'slug', 'status', 'version'])]
 class Listing extends Model
 {
     /** @use HasFactory<ListingFactory> */

@@ -3,6 +3,7 @@
 namespace Kinkoza\Catalog\Services;
 
 use App\Models\User;
+use App\Support\Database\SequenceGenerator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Kinkoza\Catalog\Data\CreateListingData;
@@ -14,11 +15,14 @@ final readonly class CreateListingService
 {
     public function __construct(
         private CatalogCache $cache,
+        private SequenceGenerator $sequences,
     ) {}
 
     public function create(User $seller, CreateListingData $data): Listing
     {
-        $listing = DB::transaction(function () use ($seller, $data): Listing {
+        $sequence = $this->sequences->next('listings');
+
+        $listing = DB::transaction(function () use ($seller, $data, $sequence): Listing {
             $status = $data->status;
 
             if (
@@ -28,10 +32,12 @@ final readonly class CreateListingService
                 $status = ListingStatus::PendingReview;
             }
 
-            return Listing::query()->create([
+            return Listing::query()->forceCreate([
+                'id' => (string) Str::ulid(),
+                'sequence' => $sequence,
                 'seller_id' => $seller->getKey(),
                 'title' => $data->title,
-                'slug' => $this->uniqueSlug($data->title),
+                'slug' => $this->slug($data->title, $sequence),
                 'description' => $data->description,
                 'category' => $data->category,
                 'status' => $status,
@@ -51,7 +57,7 @@ final readonly class CreateListingService
         return $listing;
     }
 
-    private function uniqueSlug(string $title): string
+    private function slug(string $title, int $sequence): string
     {
         $baseSlug = Str::slug($title);
 
@@ -59,14 +65,6 @@ final readonly class CreateListingService
             $baseSlug = 'listing';
         }
 
-        $slug = $baseSlug;
-        $suffix = 2;
-
-        while (Listing::query()->where('slug', $slug)->exists()) {
-            $slug = "{$baseSlug}-{$suffix}";
-            $suffix++;
-        }
-
-        return $slug;
+        return "{$baseSlug}-{$sequence}";
     }
 }
