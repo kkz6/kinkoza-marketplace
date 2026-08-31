@@ -1,6 +1,6 @@
 # Storefront module
 
-`kinkoza/storefront` is the HTTP and presentation layer for the marketplace. It composes the Catalog, Cart, and Sales modules into server-driven Livewire pages while keeping business rules in their owning domain services.
+`kinkoza/storefront` is the HTTP and presentation layer for the marketplace. It composes the Catalog, Cart, and Sales modules into server-driven Livewire pages while keeping business rules in their owning domain actions and internal transactional services.
 
 The module owns routes, Livewire components, form validation, page layouts, visitor cart identity, localized error presentation, and request-level abuse protection. It does not own ecommerce tables or duplicate checkout, inventory, publication, or cart invariants.
 
@@ -24,7 +24,7 @@ resources/views/
 ├── layouts/store.blade.php
 └── livewire/                  Page templates
 routes/storefront-routes.php  Public and authenticated web routes
-src/Http/Controllers/         Locale update endpoint
+src/Actions/                  Presentation actions and route adapters
 src/Http/Livewire/            Page components
 src/Http/Livewire/Forms/      Listing form validation and DTO mapping
 src/Providers/                Livewire namespace and rate limiters
@@ -46,6 +46,12 @@ tests/Feature/                End-to-end presentation boundary tests
 
 Rate limits are registered in `StorefrontServiceProvider`. Authentication, email verification, and throttling are registered as persistent Livewire middleware so their protection remains active on later component requests.
 
+## Action orchestration
+
+Storefront calls domain use cases through Laravel Actions. A synchronous call such as `AddListingToCart::run(...)` resolves the action through Laravel's container and forwards the arguments to its typed `handle(...)` method. The presentation layer depends on these use-case entry points, not on `CartService` or `CheckoutService` directly; the Cart and Sales actions delegate to those internal services when a workflow needs locks and multi-record transactions.
+
+`Kinkoza\Storefront\Actions\UpdateLocale` is mounted directly as the `POST /locale/{locale}` route handler. Laravel invokes its `handle(Request, string): RedirectResponse` method through the action's invokable-controller adapter. `RevealSellerContact` is a synchronous action invoked with `::run(...)` so authorization, throttling, and audit logging remain one reusable boundary.
+
 ## Page components
 
 ### `ListingsIndex`
@@ -54,21 +60,21 @@ Builds the public catalog query using published records only. Search, category, 
 
 ### `ListingShow`
 
-Loads a listing by slug and re-applies publication or seller-ownership scope on every computed lookup. It delegates cart mutation to `CartServiceInterface` and prevents self-purchase at the UI boundary before the domain service performs its own check.
+Loads a listing by slug and re-applies publication or seller-ownership scope on every computed lookup. It calls `Kinkoza\Cart\Actions\AddListingToCart::run(...)` and prevents self-purchase at the UI boundary before Cart repeats the check inside its transactional service.
 
-Seller contact information is not part of the normal listing query. A signed-in, authorized buyer must explicitly reveal it; the action is limited to five attempts per minute and emits a notice-level audit log. The locked reveal flag cannot be changed by the browser, and authorization runs again before contact data is returned.
+Seller contact information is not part of the normal listing query. A signed-in buyer must explicitly reveal it through `Kinkoza\Storefront\Actions\RevealSellerContact::run(...)`; the action repeats policy authorization, applies a five-attempts-per-minute limit, and emits a notice-level audit log. The locked reveal flag cannot be changed by the browser, and authorization runs again before contact data is returned.
 
 ### `CreateListing`
 
-Uses `ListingForm` to validate user input and translate it into `Kinkoza\Catalog\Data\CreateListingData`. `CreateListingService` owns slug allocation and seller-verification publication rules. A requested publication from an unverified seller can therefore become `pending_review` rather than bypassing the catalog policy.
+Uses `ListingForm` to validate user input and translate it into `Kinkoza\Catalog\Data\CreateListingData`. It aliases the identically named Catalog action and calls `Kinkoza\Catalog\Actions\CreateListing::run(...)`; that action owns sequence and slug allocation, persistence, cache invalidation, and seller-verification publication rules. A requested publication from an unverified seller can therefore become `pending-review` rather than bypassing the Catalog boundary.
 
 ### `CartShow`
 
-Resolves a guest or buyer cart through `CartServiceInterface`. The cart identifier is locked, every computed query is scoped back to the current identity, and quantity/removal operations include the cart version supplied by the rendered state.
+Resolves a guest or buyer cart with `GetOrCreateCart::run(...)`. The cart identifier is locked, every computed query is scoped back to the current identity, and `UpdateCartItemQuantity::run(...)` and `RemoveCartItem::run(...)` receive the cart version supplied by the rendered state.
 
 ### `CheckoutShow`
 
-Locks the cart identifier, cart version, and a generated ULID idempotency key at mount time. `CheckoutServiceInterface` performs the transactional checkout. Successful checkout redirects to the owned order confirmation; expected domain failures become stable user messages, while unexpected exceptions are reported and hidden behind a generic message.
+Locks the cart identifier, cart version, and a generated ULID idempotency key at mount time. It resolves the cart with `GetOrCreateCart::run(...)` and places the order with `Kinkoza\Sales\Actions\CheckoutCart::run(...)`. The Checkout action delegates the atomic order, invoice, inventory, and cart-conversion work to Sales' internal `CheckoutService`. Successful checkout redirects to the owned order confirmation; expected domain failures become stable user messages, while unexpected exceptions are reported and hidden behind a generic message.
 
 ### `OrderConfirmation`
 
@@ -86,7 +92,7 @@ The Cart module remains responsible for creating, adopting, merging, and authori
 
 ## Localization
 
-`UpdateLocaleController` accepts only keys from `config/locales.php`, saves the choice in the session, applies it immediately, and persists it to an authenticated user's `locale` column. The host application's `SetLocale` middleware restores the correct locale on subsequent page and Livewire requests.
+The `UpdateLocale` route action accepts only keys from `config/locales.php`, saves the choice in the session, applies it immediately, and persists it to an authenticated user's `locale` column. The host application's `SetLocale` middleware restores the correct locale on subsequent page and Livewire requests.
 
 User-facing domain failures pass through `DomainErrorMessage`, which maps known cart exceptions to translated messages and prevents database or infrastructure details from reaching the browser.
 
@@ -119,11 +125,13 @@ Render a component from another Blade view through the registered namespace:
 <livewire:storefront::listings-index />
 ```
 
-Domain code should call Catalog, Cart, or Sales contracts directly instead of invoking a Livewire component.
+Application code should call the owning Catalog, Cart, or Sales action through `::run(...)` instead of invoking a Livewire component or reaching into another module's internal service.
 
 ## Extending the module
 
 - Add page-level orchestration under `src/Http/Livewire` and keep reusable business rules in the domain that owns them.
+- Call an owning module's action through its typed `::run(...)` entry point. Add a new domain action there when no existing use case fits; do not couple Storefront to an internal transactional service.
+- Add non-Livewire route handlers as focused actions under `src/Actions` and mount the action class directly in `storefront-routes.php`.
 - Add a matching Blade template under `resources/views/livewire` and a named route under `routes/storefront-routes.php`.
 - Apply explicit authentication, verification, authorization, and a named rate limiter before exposing new state-changing actions.
 - Treat every Livewire public property as client input. Lock identifiers and re-scope models during each request.

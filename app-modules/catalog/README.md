@@ -6,7 +6,7 @@ The module does not own HTTP screens, carts, checkout, orders, invoices, payment
 
 ## Boundary and dependency direction
 
-Catalog depends only on Laravel components and these shared application services:
+Catalog depends on Laravel components, `lorisleiva/laravel-actions`, and these shared application services:
 
 - `App\Models\User` for listing ownership;
 - `App\Models\Concerns\HasUlidAndSequence` for identifier behavior;
@@ -16,7 +16,7 @@ Dependencies point toward Catalog:
 
 - Cart consumes `Listing` when a line is added.
 - Sales consumes `Listing` and `Currency` during checkout and inventory reduction.
-- Storefront consumes Catalog's model, enums, policy, DTO, and creation service.
+- Storefront consumes Catalog's model, enums, policy, DTO, and creation action.
 
 Catalog must remain unaware of Cart, Sales, and Storefront. Its `routes/catalog-routes.php` file is currently empty, and `CatalogServiceProvider` does not register routes or views.
 
@@ -31,12 +31,12 @@ catalog/
 │   └── seeders/ListingSeeder.php
 ├── routes/catalog-routes.php
 ├── src/
+│   ├── Actions/CreateListing.php
 │   ├── Data/CreateListingData.php
 │   ├── Enums/{Country,Currency,ListingCategory,ListingStatus}.php
 │   ├── Models/Listing.php
 │   ├── Policies/ListingPolicy.php
 │   ├── Providers/CatalogServiceProvider.php
-│   ├── Services/CreateListingService.php
 │   └── Support/CatalogCache.php
 └── tests/Feature/
 ```
@@ -70,11 +70,11 @@ Indexes support public-window, category/price, country/price, and seller/status 
 
 The ULID is the canonical key. Dependent records must reference `listings.id`, never `sequence`. The numeric sequence is a unique, human-friendly reference and ordering tie-breaker.
 
-`CreateListingService` reserves the next `listings` sequence through `SequenceGenerator`, then creates the listing with an explicit ULID. Normal Eloquent creation is also covered by `HasUlidAndSequence` when either identifier is absent. Sequence reservation uses a locked row in the shared `sequences` table. A sequence is reserved before the listing transaction, so gaps after a failed write are valid and must not be treated as corruption.
+The `CreateListing` action reserves the next `listings` sequence through `SequenceGenerator`, then creates the listing with an explicit ULID. Normal Eloquent creation is also covered by `HasUlidAndSequence` when either identifier is absent. Sequence reservation uses a locked row in the shared `sequences` table. A sequence is reserved before the listing transaction, so gaps after a failed write are valid and must not be treated as corruption.
 
 Creation slugs use `{slugified-title}-{sequence}`. An empty slugified title falls back to `listing-{sequence}`.
 
-The model guards `id`, `sequence`, `seller_id`, `slug`, `status`, and `version` from ordinary mass assignment. Use the creation service when creating application listings; it owns assignment of these protected fields.
+The model guards `id`, `sequence`, `seller_id`, `slug`, `status`, and `version` from ordinary mass assignment. Use the creation action when creating application listings; it owns assignment of these protected fields.
 
 ## Typed values
 
@@ -85,48 +85,36 @@ The model guards `id`, `sequence`, `seller_id`, `slug`, `status`, and `version` 
 
 `Currency::format()` formats a minor-unit integer using the current Laravel locale. `formattingMetadata()` exposes the symbol, decimal places, and symbol position for clients.
 
-## Public services and usage
+## Public actions and usage
 
 ### Create a listing
 
-`CreateListingService::create(User $seller, CreateListingData $data): Listing` is the application-facing write operation.
+`CreateListing::run(User $seller, CreateListingData $data): Listing` is the application-facing write operation. Laravel Actions resolves the action and delegates to its typed `handle(User, CreateListingData): Listing` method.
 
 ```php
-use App\Models\User;
 use Carbon\CarbonImmutable;
+use Kinkoza\Catalog\Actions\CreateListing;
 use Kinkoza\Catalog\Data\CreateListingData;
 use Kinkoza\Catalog\Enums\Country;
 use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Catalog\Enums\ListingCategory;
 use Kinkoza\Catalog\Enums\ListingStatus;
-use Kinkoza\Catalog\Models\Listing;
-use Kinkoza\Catalog\Services\CreateListingService;
 
-final readonly class CreateAssetListing
-{
-    public function __construct(
-        private CreateListingService $listings,
-    ) {}
-
-    public function handle(User $seller): Listing
-    {
-        return $this->listings->create($seller, new CreateListingData(
-            title: 'Five-axis CNC machine',
-            description: 'A maintained production machine with service history.',
-            category: ListingCategory::MachineryEquipment,
-            status: ListingStatus::Published,
-            currency: Currency::EUR,
-            priceMinor: 12_500_000,
-            country: Country::France,
-            city: 'Lyon',
-            onlineAt: CarbonImmutable::now(),
-            inventoryQuantity: 1,
-        ));
-    }
-}
+$listing = CreateListing::run($seller, new CreateListingData(
+    title: 'Five-axis CNC machine',
+    description: 'A maintained production machine with service history.',
+    category: ListingCategory::MachineryEquipment,
+    status: ListingStatus::Published,
+    currency: Currency::EUR,
+    priceMinor: 12_500_000,
+    country: Country::France,
+    city: 'Lyon',
+    onlineAt: CarbonImmutable::now(),
+    inventoryQuantity: 1,
+));
 ```
 
-The service retries the listing transaction up to three times and invalidates the featured cache after commit. A request for `Published` from a user whose `is_verified_seller` flag is false is stored as `PendingReview`.
+The action retries the listing transaction up to three times and invalidates the featured cache after commit. A request for `Published` from a user whose `is_verified_seller` flag is false is stored as `PendingReview`.
 
 `CreateListingData` is typed but does not perform semantic validation. HTTP, CLI, and import adapters must validate title lengths, non-negative minor-unit prices, inventory bounds, supported enum values, URL shape, and publication-date ordering before constructing it. The Storefront Livewire form is one such adapter.
 
@@ -160,7 +148,7 @@ $featured = app(CatalogCache::class)->featuredPublished(12);
 
 The cache uses Laravel's flexible stale-while-revalidate behavior: 60 seconds fresh and 300 seconds stale. Keys include the value of `catalog:listings:version`; invalidation advances that version instead of scanning or deleting result keys.
 
-Only `CreateListingService` invalidates automatically. Code that updates or deletes listings directly—including publication, price, image, or inventory changes—must call `CatalogCache::invalidate()` after the database transaction commits. The current Sales inventory update does not invalidate this cache, so cached featured results can remain stale within the configured flexible-cache window.
+Only the `CreateListing` action invalidates automatically. Code that updates or deletes listings directly—including publication, price, image, or inventory changes—must call `CatalogCache::invalidate()` after the database transaction commits. The current Sales inventory update does not invalidate this cache, so cached featured results can remain stale within the configured flexible-cache window.
 
 ## Invariants
 
@@ -214,7 +202,7 @@ Catalog currently dispatches no domain events and registers no listeners or obse
 
 ## Extension points
 
-- Add catalog write operations as focused services rather than writing guarded lifecycle fields from UI components.
+- Add catalog write operations as focused Laravel Actions rather than writing guarded lifecycle fields from UI components.
 - Add enum cases together with validation, translations/presentation labels, factories, seed data, filters, and tests that consume them.
 - Add searchable fields with appropriate database indexes or introduce a dedicated search adapter; no search-engine contract exists yet.
 - Invalidate `CatalogCache` after committed create, update, delete, publication, and inventory mutations that can change featured results.

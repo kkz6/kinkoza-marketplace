@@ -2,7 +2,7 @@
 
 `kinkoza/sales` owns the transition from an authenticated buyer's active cart to immutable commercial records. A successful checkout creates one confirmed order, its order lines, one issued invoice, and matching invoice lines while allocating inventory and converting the cart in the same database transaction.
 
-Sales does not own product discovery, cart editing, payment capture, tax, shipping, fulfillment, refunds, or HTTP screens. Catalog owns listing publication and inventory state, Cart owns the reviewed basket, and Storefront adapts the checkout contract to Livewire.
+Sales does not own product discovery, cart editing, payment capture, tax, shipping, fulfillment, refunds, or HTTP screens. Catalog owns listing publication and inventory state, Cart owns the reviewed basket, and Storefront invokes the checkout action from Livewire.
 
 ## Dependency direction
 
@@ -15,14 +15,11 @@ App shared kernel        Catalog        Cart
                        Storefront
 ```
 
-Sales declares Cart and Catalog as Composer dependencies and also uses the host `User` model and `SequenceGenerator`. Cart and Catalog never depend on Sales.
+Sales declares Cart, Catalog, and Laravel Actions 2.12 as Composer dependencies and also uses the host `User` model and `SequenceGenerator`. Cart and Catalog never depend on Sales.
 
-Laravel discovers `Kinkoza\Sales\Providers\SalesServiceProvider`, which:
+Laravel discovers `Kinkoza\Sales\Providers\SalesServiceProvider`, which connects `OrderPlaced` to the queued `SendOrderConfirmation` action. Checkout needs no container binding: Laravel Actions resolves `CheckoutCart` and injects its concrete transactional collaborator.
 
-- binds `CheckoutServiceInterface` to `CheckoutService`; and
-- connects `OrderPlaced` to the queued `SendOrderConfirmation` listener.
-
-`routes/sales-routes.php` is intentionally empty. The package exposes a PHP application contract rather than an HTTP API.
+`routes/sales-routes.php` is intentionally empty. The package exposes application actions rather than an HTTP API.
 
 ## Directory map
 
@@ -30,13 +27,12 @@ Laravel discovers `Kinkoza\Sales\Providers\SalesServiceProvider`, which:
 database/factories/              Order and invoice graph factories
 database/migrations/             Orders, order items, invoices, invoice items
 routes/sales-routes.php          Empty HTTP adapter placeholder
-src/Contracts/Services/          Public checkout contract
+src/Actions/                     Checkout and queued listener actions
 src/Enums/                       Order and invoice lifecycle values
 src/Events/                      Committed sales facts
-src/Listeners/                   Queued notification orchestration
 src/Models/                      Commercial record graph
 src/Notifications/               Localized order-confirmation email
-src/Providers/                   Contract and event registration
+src/Providers/                   Event registration
 src/Services/                    Transactional checkout implementation
 tests/Feature/                   Checkout and notification tests
 ```
@@ -81,7 +77,7 @@ Each order has one invoice. It has its own ULID, numeric sequence, unique `INV-0
 
 Every order item has one invoice item. The invoice line copies the same title, currency, unit price, quantity, and line total and references its source order item uniquely. `listing_id` is retained as an informational nullable ULID without a foreign-key constraint, so invoice history does not depend on a live catalog row.
 
-All four models are fully guarded and use the host `HasUlidAndSequence` concern. Application code should use `CheckoutServiceInterface` rather than mass assigning accounting records.
+All four models are fully guarded and use the host `HasUlidAndSequence` concern. Application code should run `CheckoutCart` rather than mass assigning accounting records or invoking the internal transaction service directly.
 
 ## ULIDs and numeric sequences
 
@@ -96,36 +92,33 @@ Before entering the inventory transaction, checkout reserves:
 
 Order, invoice, and every dependent line ULID can then be assigned before insertion. Reserving ranges reduces sequence-row lock traffic while the inventory transaction is open. If the cart changes or checkout later fails, reserved values may be skipped. Gaps are expected and issued sequence values are never reused.
 
-## Public checkout contract
+## Public checkout action
 
-Depend on the bound interface:
+`Kinkoza\Sales\Actions\CheckoutCart` uses Laravel Actions' `AsAction` concern. Its constructor receives the concrete `CheckoutService`, while its public entry point remains a small, typed application boundary:
 
 ```php
 use App\Models\User;
 use Kinkoza\Cart\Models\Cart;
-use Kinkoza\Sales\Contracts\Services\CheckoutServiceInterface;
+use Kinkoza\Sales\Actions\CheckoutCart;
 use Kinkoza\Sales\Models\Order;
 
-final readonly class PlaceOrder
-{
-    public function __construct(
-        private CheckoutServiceInterface $checkout,
-    ) {}
+public function handle(
+    Cart $cart,
+    User $buyer,
+    string $idempotencyKey,
+    int $expectedVersion,
+): Order;
+```
 
-    public function handle(
-        Cart $cart,
-        User $buyer,
-        string $idempotencyKey,
-        int $reviewedVersion,
-    ): Order {
-        return $this->checkout->checkout(
-            $cart,
-            $buyer,
-            $idempotencyKey,
-            $reviewedVersion,
-        );
-    }
-}
+Call the action through its static Laravel Actions proxy:
+
+```php
+$order = CheckoutCart::run(
+    $cart,
+    $buyer,
+    $idempotencyKey,
+    $reviewedVersion,
+);
 ```
 
 The idempotency key is trimmed and must contain between 1 and 64 characters. It should be generated when the buyer opens the review step and remain stable for retries of that same submission. The Storefront currently uses a locked ULID string.
@@ -134,7 +127,7 @@ The expected version must be the cart version shown to the buyer. If the cart ch
 
 ## Checkout transaction
 
-`CheckoutService` performs a preflight check, reserves sequences, and then runs the write transaction with up to five database attempts:
+The internal `CheckoutService` collaborator performs a preflight check, reserves sequences, and then runs the write transaction with up to five database attempts:
 
 1. Lock the cart row and re-check idempotency, buyer ownership, active status, active key, and reviewed version.
 2. Read cart-item references in deterministic ULID order.
@@ -172,9 +165,11 @@ Order and invoice lines copy the same values and calculate `line_total_minor` fr
 
 ## Events, queues, and localization
 
-`OrderPlaced` implements `ShouldDispatchAfterCommit`. `SendOrderConfirmation` implements `ShouldQueueAfterCommit`, retries three times with 60- and 300-second backoff, and discards the job when serialized models no longer exist.
+`OrderPlaced` implements `ShouldDispatchAfterCommit`. The provider registers `Kinkoza\Sales\Actions\SendOrderConfirmation` as its listener. Laravel Actions' listener decorator falls back to the action's typed `handle(OrderPlaced $event): void` method.
 
-The listener reloads the buyer and invoice, then sends `OrderConfirmation` through Laravel Notifications. The email includes order and invoice references. Because the host `User` implements `HasLocalePreference`, Laravel renders the queued notification using the buyer's stored locale.
+`SendOrderConfirmation` uses `AsAction` and implements `ShouldQueueAfterCommit`. It retries three times with 60- and 300-second backoff and discards the job when serialized models no longer exist.
+
+The action reloads the buyer and invoice, then sends `OrderConfirmation` through Laravel Notifications. The email includes order and invoice references. Because the host `User` implements `HasLocalePreference`, Laravel renders the queued notification using the buyer's stored locale.
 
 Run a worker when using an asynchronous queue:
 
@@ -186,13 +181,13 @@ After-commit dispatch prevents a listener from observing a rolled-back order. It
 
 ## Extension points
 
-- Add checkout behavior behind `CheckoutServiceInterface`; update the interface, provider binding, callers, and invariant tests together.
+- Keep public checkout orchestration in `CheckoutCart` and transaction/invariant mechanics in its injected `CheckoutService`. Callers and tests should use `CheckoutCart::run()` rather than resolving the collaborator.
 - Model payment authorization/capture as a separate state machine instead of marking invoices paid inside the current checkout transaction.
 - Add tax, shipping, discounts, or fees with explicit line/total fields and preserve the same values across order and invoice snapshots.
 - Keep fulfillment, cancellation, refund, and invoice-transition operations in focused services with their own authorization and idempotency rules.
 - Add stable post-commit events for new cross-module facts. Use an outbox for delivery guarantees beyond the local queue transaction boundary.
 - If inventory changes should update featured catalog results immediately, coordinate a post-commit `CatalogCache` invalidation; checkout currently advances listing versions but does not invalidate that cache.
-- Add HTTP or API adapters outside the domain service and validate ownership before passing a cart to checkout.
+- Add HTTP or API adapters outside Sales and validate ownership before passing a cart to `CheckoutCart`.
 
 ## Testing
 

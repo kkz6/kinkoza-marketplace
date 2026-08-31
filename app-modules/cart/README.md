@@ -18,7 +18,7 @@ App shared kernel                  Catalog
 
 Cart declares `kinkoza/catalog` as a package dependency and uses the host application's `User`, `HasUlidAndSequence`, and `SequenceGenerator`. Catalog and the shared kernel do not depend on Cart. Sales and Storefront consume Cart; Cart does not call either consumer.
 
-The Composer path package is discovered through `Kinkoza\Cart\Providers\CartServiceProvider`, which binds `CartServiceInterface` to `CartService`. `routes/cart-routes.php` is intentionally empty: this module exposes a PHP contract, not an HTTP API.
+The Composer path package is discovered through `Kinkoza\Cart\Providers\CartServiceProvider`. Public use cases are Laravel Action classes, so the provider does not maintain a service-interface binding. `routes/cart-routes.php` is intentionally empty because Cart exposes PHP actions rather than an HTTP API.
 
 ## Directory map
 
@@ -27,13 +27,13 @@ composer.json                    Package metadata and Catalog dependency
 database/factories/              Cart and cart-item test factories
 database/migrations/             carts and cart_items tables
 routes/cart-routes.php           Empty HTTP adapter placeholder
-src/Contracts/Services/          Public cart service contract
+src/Actions/                      Public Laravel Action entry points
 src/Enums/                       Cart lifecycle status
 src/Exceptions/                  Expected cart-domain failures
 src/Models/                      Eloquent cart aggregate
-src/Providers/                   Container binding
-src/Services/                    Transactional cart implementation
-tests/Feature/                   Pest service/invariant tests
+src/Providers/                   Package discovery provider
+src/Services/                    Internal transactional implementation
+tests/Feature/                   Pest action/invariant tests
 ```
 
 The module currently has no controllers, jobs, events, commands, or views.
@@ -82,7 +82,7 @@ Relationships:
 
 The unique index on `cart_id` plus `listing_id` keeps one live line per listing in a cart. Re-adding that listing increments the existing quantity instead of creating another line.
 
-Both models are fully guarded. Domain writes therefore go through the service's explicit `forceFill`/`forceCreate` calls rather than accepting arbitrary request arrays.
+Both models are fully guarded. Domain writes therefore go through the internal `CartService`'s explicit `forceFill`/`forceCreate` calls rather than accepting arbitrary request arrays.
 
 ### ULIDs and numeric sequences
 
@@ -96,7 +96,7 @@ Sequence allocation is unique and increasing per sequence name. Consumers must n
 
 ## Guest and buyer identity
 
-The service derives an active identity key rather than trusting a cart ID supplied by a browser:
+The internal service derives an active identity key rather than trusting a cart ID supplied by a browser:
 
 | Identity | Persisted identity |
 | --- | --- |
@@ -116,26 +116,14 @@ When a visitor signs in, `getOrCreateFor($buyer, $guestToken)` behaves as follow
 
 The non-destructive refusal preserves the guest cart under its guest key rather than silently dropping items. When duplicate listing lines merge successfully, the guest line's title, currency, and unit-price snapshot becomes the combined buyer line's snapshot.
 
-## Public service contract
+## Public actions
 
-Resolve the contract, not its implementation:
+Cart exposes four Laravel Actions. Calling `::run(...)` resolves the action through Laravel's container and forwards the arguments to its typed `handle(...)` method:
 
-```php
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+```text
+GetOrCreateCart::run(?User $buyer, string $guestToken): Cart;
 
-$carts = app(CartServiceInterface::class);
-```
-
-The exact interface is:
-
-```php
-use App\Models\User;
-use Kinkoza\Cart\Models\Cart;
-use Kinkoza\Catalog\Models\Listing;
-
-public function getOrCreateFor(?User $buyer, string $guestToken): Cart;
-
-public function add(
+AddListingToCart::run(
     Listing $listing,
     int $quantity,
     ?User $buyer,
@@ -143,44 +131,52 @@ public function add(
     ?int $expectedVersion = null,
 ): Cart;
 
-public function updateQuantity(
+UpdateCartItemQuantity::run(
     Cart $cart,
     string $itemId,
     int $quantity,
     int $expectedVersion,
 ): Cart;
 
-public function remove(Cart $cart, string $itemId, int $expectedVersion): Cart;
+RemoveCartItem::run(
+    Cart $cart,
+    string $itemId,
+    int $expectedVersion,
+): Cart;
 ```
+
+The actions are intentionally thin. They define the stable, use-case-oriented entry points while `Kinkoza\Cart\Services\CartService` remains the internal implementation for locks, transactions, identity restoration, snapshots, totals, and invariant checks. Cross-module callers should use the actions rather than resolve `CartService` directly.
 
 A version-aware guest flow looks like this:
 
 ```php
 use Illuminate\Support\Str;
-use Kinkoza\Cart\Contracts\Services\CartServiceInterface;
+use Kinkoza\Cart\Actions\AddListingToCart;
+use Kinkoza\Cart\Actions\GetOrCreateCart;
+use Kinkoza\Cart\Actions\RemoveCartItem;
+use Kinkoza\Cart\Actions\UpdateCartItemQuantity;
 use Kinkoza\Catalog\Models\Listing;
 
 $guestToken = strtolower((string) Str::ulid());
 $listing = Listing::query()->published()->firstOrFail();
-$carts = app(CartServiceInterface::class);
 
-$cart = $carts->getOrCreateFor(null, $guestToken);
-$cart = $carts->add($listing, 2, null, $guestToken, $cart->version);
+$cart = GetOrCreateCart::run(null, $guestToken);
+$cart = AddListingToCart::run($listing, 2, null, $guestToken, $cart->version);
 
 $item = $cart->items->sole();
-$cart = $carts->updateQuantity($cart, $item->id, 3, $cart->version);
-$cart = $carts->remove($cart, $item->id, $cart->version);
+$cart = UpdateCartItemQuantity::run($cart, $item->id, 3, $cart->version);
+$cart = RemoveCartItem::run($cart, $item->id, $cart->version);
 ```
 
 For sign-in restoration, pass both the authenticated user and the same session token:
 
 ```php
-$cart = $carts->getOrCreateFor($buyer, $guestToken);
+$cart = GetOrCreateCart::run($buyer, $guestToken);
 ```
 
-`add()` permits a `null` expected version for callers that do not yet hold cart state. Once a cart version has been rendered or returned, callers should send it back so stale writes fail explicitly.
+`AddListingToCart::run()` permits a `null` expected version for callers that do not yet hold cart state. Once a cart version has been rendered or returned, callers should send it back so stale writes fail explicitly.
 
-`updateQuantity()` and `remove()` verify that the item belongs to the supplied cart, but they do not receive an actor. The caller must first query or authorize that `Cart` for the current buyer/guest. Storefront does this by re-querying with either `buyer_id` or `guest_token` before invoking the service.
+`UpdateCartItemQuantity::run()` and `RemoveCartItem::run()` verify that the item belongs to the supplied cart, but they do not receive an actor. The caller must first query or authorize that `Cart` for the current buyer or guest. Storefront does this by re-querying with either `buyer_id` or `guest_token` before invoking the action.
 
 Expected domain failures are represented by:
 
@@ -188,9 +184,9 @@ Expected domain failures are represented by:
 - `CurrencyMismatch` when a second currency is introduced.
 - `InsufficientInventory` when requested or merged quantity exceeds current stock.
 - `ListingUnavailable` when the listing is deleted, unpublished, outside its publication window, or otherwise unavailable.
+- `SelfPurchaseNotAllowed` when an authenticated buyer tries to add their own listing.
 - `StaleCartVersion` when the expected version differs from the locked row.
 - `InvalidArgumentException` for a non-positive quantity or invalid guest ULID.
-- `DomainException` when an authenticated buyer tries to purchase their own listing.
 
 Invalid cart/item identifiers can also produce Eloquent model-not-found failures. Lock acquisition and database failures are infrastructure errors and are not translated into cart-domain exceptions here.
 
@@ -198,7 +194,7 @@ Invalid cart/item identifiers can also produce Eloquent model-not-found failures
 
 ### Locking
 
-The service combines two kinds of lock:
+The internal `CartService` combines two kinds of lock:
 
 - Cache locks serialize work by identity (`cart:identity:{sha256(active-key)}`) or by cart (`cart:{cart-ulid}`). Locks have a 10-second lease and wait for up to 5 seconds.
 - Database transactions retry up to five times and use `lockForUpdate()` for the active cart, affected item, and relevant published listing rows.
@@ -245,20 +241,21 @@ new active cart (version 1)
                                converted_at set, version + 1
 ```
 
-`CartStatus` has `Active`, `Converted`, and `Abandoned` cases. Cart itself creates and mutates active carts and privately marks merge sources abandoned. `Kinkoza\Sales\Services\CheckoutService` owns conversion: it verifies buyer ownership and cart version, creates the order/invoice graph, decrements stock, then clears `active_key` and sets `converted_at` in the same transaction.
+`CartStatus` has `Active`, `Converted`, and `Abandoned` cases. Cart itself creates and mutates active carts and privately marks merge sources abandoned. `Kinkoza\Sales\Actions\CheckoutCart::run(...)` is the public checkout handoff; it delegates to Sales' internal `CheckoutService`, which verifies buyer ownership and cart version, creates the order/invoice graph, decrements stock, then clears `active_key` and sets `converted_at` in the same transaction.
 
-Converted and abandoned carts remain as historical records but cannot be mutated through `CartService`.
+Converted and abandoned carts remain as historical records but cannot be mutated through the public Cart actions.
 
 ## Extension points
 
-- Add or change public operations on `CartServiceInterface`, then update the `CartServiceProvider` binding and invariant tests together.
-- Replace the interface binding in the application container when another implementation is required; callers already depend on the contract.
-- Keep HTTP, session, authentication, and translated presentation errors in Storefront or another adapter rather than adding them to the domain service.
+- Add a focused action under `src/Actions` for each new public use case. Give it a typed `handle(...)` method and test callers through `ActionName::run(...)`.
+- Keep `CartService` internal. Actions may delegate transaction-heavy work to it, but Storefront and other modules should depend on the use-case actions rather than its method surface.
+- Keep HTTP, session, authentication, and translated presentation errors in Storefront or another adapter rather than adding them to actions or the internal service.
+- Laravel Actions can be faked with helpers such as `AddListingToCart::shouldRun()` when a presentation test needs to isolate orchestration from domain work.
 - Add new domain failures under `src/Exceptions` and map safe user-facing text in Storefront's `DomainErrorMessage`.
 - Extending totals with discounts, tax, or shipping requires explicit schema and service changes plus matching Sales checkout semantics. `recalculate()` is private and currently supports subtotal-only totals; it is not an overridable pricing hook.
-- Inventory reservation would be a new cross-module workflow. The current contract performs availability checks only; checkout remains the deduction boundary.
+- Inventory reservation would be a new cross-module workflow. The current actions perform availability checks only; checkout remains the deduction boundary.
 - Cart emits no domain events today. Add events deliberately at committed lifecycle points if downstream integrations require them.
-- Add lifecycle values only with matching migration/default, service, factory, checkout, and test updates.
+- Add lifecycle values only with matching migration/default, action, internal service, factory, checkout, and test updates.
 
 ## Testing
 
@@ -268,7 +265,7 @@ Run the Cart module's feature tests from the repository root:
 herd php artisan test app-modules/cart/tests/Feature
 ```
 
-Run the exact service test file:
+Run the focused action and domain-invariant test file:
 
 ```bash
 herd php artisan test app-modules/cart/tests/Feature/CartServiceTest.php

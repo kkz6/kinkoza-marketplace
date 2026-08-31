@@ -20,7 +20,7 @@ Local Laravel Herd site: [https://kinkoza.test](https://kinkoza.test)
 
 ## Architecture
 
-The application is a Laravel host with four Composer path packages under `app-modules/`. Each package owns its domain or presentation code, service provider, and Pest feature tests; persistence-owning modules also own their migrations.
+The application is a Laravel host with four Composer path packages under `app-modules/`. Each package owns its domain or presentation code, Laravel Actions, service provider, and Pest feature tests; persistence-owning modules also own their migrations.
 
 | Module | Responsibility | Depends on |
 | --- | --- | --- |
@@ -29,7 +29,9 @@ The application is a Laravel host with four Composer path packages under `app-mo
 | [`sales`](app-modules/sales/README.md) | Checkout, inventory allocation, orders, invoices, events, and confirmation notifications | `cart`, `catalog` |
 | [`storefront`](app-modules/storefront/README.md) | Livewire pages, filters, cart and checkout interactions, locale switching, and route boundaries | `catalog`, `cart`, `sales` |
 
-The host application owns cross-cutting concerns: users and authentication, locale middleware, per-entity numeric sequences, framework configuration, and frontend assets. Module contracts are bound to their implementations in service providers, which keeps the Livewire layer dependent on interfaces rather than concrete domain services.
+The host application owns cross-cutting concerns: users and authentication, locale middleware, per-entity numeric sequences, framework configuration, and frontend assets. Application-facing use cases are exposed as classes using `lorisleiva/laravel-actions`. Livewire components call typed action entry points such as `CreateListing::run(...)`, `AddListingToCart::run(...)`, and `CheckoutCart::run(...)`; Laravel resolves each action and delegates to its `handle(...)` method.
+
+Actions form the public orchestration boundary. Small use cases can live entirely in an action, while transaction-heavy workflows delegate to internal services such as `CartService` and `CheckoutService`. Storefront does not resolve those services or depend on service interfaces. Actions can also adapt other Laravel entry points: `UpdateLocale` is an invokable route action, and `SendOrderConfirmation` is the queued after-commit listener for `OrderPlaced`.
 
 The dependency direction is intentionally one-way: the storefront composes the domains, sales consumes cart and catalog state, and cart consumes catalog state. Catalog does not depend on checkout or presentation code.
 
