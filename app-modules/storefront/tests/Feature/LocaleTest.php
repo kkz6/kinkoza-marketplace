@@ -3,6 +3,8 @@
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\App;
+use Kinkoza\Storefront\Http\Livewire\CreateListing;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -43,6 +45,19 @@ test('the account preference localizes a fresh authenticated session', function 
 
 test('unsupported locales are rejected', function (): void {
     $this->post('/locale/de')->assertNotFound();
+});
+
+test('listing validation uses French messages and attribute names', function (): void {
+    $seller = User::factory()->create(['locale' => 'fr']);
+
+    App::setLocale('fr');
+
+    Livewire::actingAs($seller)
+        ->test(CreateListing::class)
+        ->set('form.title', '')
+        ->call('save')
+        ->assertHasErrors(['form.title' => 'required'])
+        ->assertSee('Le champ titre de l’annonce est obligatoire.');
 });
 
 test('the selected locale persists across Livewire updates', function (): void {

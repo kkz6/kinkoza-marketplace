@@ -16,11 +16,11 @@ class SequenceGenerator
     public function reserve(string $name, int $count): array
     {
         if (blank($name)) {
-            throw new InvalidArgumentException('A sequence name is required.');
+            throw new InvalidArgumentException((string) __('A sequence name is required.'));
         }
 
         if ($count < 1) {
-            throw new InvalidArgumentException('A positive sequence range is required.');
+            throw new InvalidArgumentException((string) __('A positive sequence range is required.'));
         }
 
         return DB::transaction(function () use ($count, $name): array {
