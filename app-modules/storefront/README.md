@@ -90,6 +90,10 @@ The POC assumes seller business data was established before this page. It does n
 
 Resolves a guest or buyer cart with `GetOrCreateCart::run(...)`. The cart identifier is locked, every computed query is scoped back to the current identity, and `UpdateCartItemQuantity::run(...)` and `RemoveCartItem::run(...)` receive the cart version supplied by the rendered state.
 
+### `CartItemCount`
+
+Renders the active cart's total quantity in both desktop and mobile navigation. It initializes through `GetCartItemCount::run(...)` and listens for `cart-updated`, so additions, quantity changes, and removals update the badge without a page reload. The public count is locked against browser mutation, and its accessible label is localized.
+
 ### `CheckoutShow`
 
 Locks the cart identifier, cart version, and a generated ULID idempotency key at mount time. It resolves the cart with `GetOrCreateCart::run(...)` and places the order with `Kinkoza\Sales\Actions\CheckoutCart::run(...)`. The Checkout action performs the atomic order, invoice, inventory, and cart-conversion work directly. Successful checkout redirects to the owned order confirmation; expected domain failures become stable user messages, while unexpected exceptions are reported and hidden behind a generic message.

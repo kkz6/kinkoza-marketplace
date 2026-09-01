@@ -125,10 +125,12 @@ The guest token is a bearer identifier and must remain in a protected server-sid
 
 ## Public actions
 
-Cart exposes four Laravel Actions. Calling `::run(...)` resolves the action through Laravel's container and forwards the arguments to its typed `handle(...)` method:
+Cart exposes five Laravel Actions. Calling `::run(...)` resolves the action through Laravel's container and forwards the arguments to its typed `handle(...)` method:
 
 ```text
 GetOrCreateCart::run(?User $buyer, string $guestToken): Cart;
+
+GetCartItemCount::run(?User $buyer, string $guestToken): int;
 
 AddListingToCart::run(
     Listing $listing,

@@ -64,11 +64,14 @@ test('the selected locale persists across Livewire updates', function (): void {
     $this->post(route('locale.update', ['locale' => 'fr']))->assertRedirect();
     $initialHtml = $this->get(route('home'))->getContent();
 
-    expect(preg_match('/wire:snapshot="([^"]+)"/', $initialHtml, $matches))->toBe(1);
+    expect(preg_match_all('/wire:snapshot="([^"]+)"/', $initialHtml, $matches))->toBeGreaterThan(0);
 
-    $snapshot = html_entity_decode($matches[1], ENT_QUOTES | ENT_HTML5);
+    $snapshot = collect($matches[1])
+        ->map(fn (string $encodedSnapshot): string => html_entity_decode($encodedSnapshot, ENT_QUOTES | ENT_HTML5))
+        ->first(fn (string $candidate): bool => data_get(json_decode($candidate, true), 'memo.name') === 'storefront::listings-index');
 
-    expect(json_decode($snapshot, true))->toBeArray();
+    expect($snapshot)->toBeString()
+        ->and(json_decode($snapshot, true))->toBeArray();
 
     App::setLocale('en');
 

@@ -8,6 +8,7 @@ use Kinkoza\Cart\Models\Cart;
 use Kinkoza\Cart\Models\CartItem;
 use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Catalog\Models\Listing;
+use Kinkoza\Storefront\Http\Livewire\CartItemCount;
 use Kinkoza\Storefront\Http\Livewire\CartShow;
 use Kinkoza\Storefront\Http\Livewire\ListingShow;
 use Livewire\Livewire;
@@ -37,6 +38,27 @@ test('a guest can add a published listing through the detail UI', function (): v
         ->and($item->listing_id)->toBe($listing->id)
         ->and($item->quantity)->toBe(2)
         ->and($item->title)->toBe($listing->title);
+});
+
+test('the navigation cart count initializes from the active cart and reacts to updates', function (): void {
+    $listing = Listing::factory()->published()->create(['inventory_quantity' => 10]);
+    $guestToken = strtolower((string) Str::ulid());
+
+    AddListingToCart::run($listing, 2, null, $guestToken);
+    $this->withSession(['storefront.guest_cart_token' => $guestToken]);
+
+    $this->get(route('home'))
+        ->assertOk()
+        ->assertSeeLivewire('storefront::cart-item-count');
+
+    Livewire::test(CartItemCount::class)
+        ->assertSet('count', 2)
+        ->assertSee('2')
+        ->dispatch('cart-updated', count: 5)
+        ->assertSet('count', 5)
+        ->assertSee('5')
+        ->dispatch('cart-updated')
+        ->assertSet('count', 2);
 });
 
 test('cart UI updates quantity and removes an item using the current version', function (): void {

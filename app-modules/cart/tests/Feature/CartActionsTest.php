@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Kinkoza\Cart\Actions\AddListingToCart;
+use Kinkoza\Cart\Actions\GetCartItemCount;
 use Kinkoza\Cart\Actions\GetOrCreateCart;
 use Kinkoza\Cart\Actions\RemoveCartItem;
 use Kinkoza\Cart\Actions\UpdateCartItemQuantity;
@@ -59,6 +60,30 @@ test('totals are recomputed from item snapshot values', function (): void {
     expect($cart->subtotal_minor)->toBe(3_100)
         ->and($cart->total_minor)->toBe(3_100)
         ->and($cart->items)->toHaveCount(2);
+});
+
+test('the item count action sums quantities for the active cart identity', function (): void {
+    $firstListing = Listing::factory()->create([
+        'currency' => 'EUR',
+        'inventory_quantity' => 10,
+    ]);
+    $secondListing = Listing::factory()->create([
+        'currency' => 'EUR',
+        'inventory_quantity' => 10,
+    ]);
+
+    $cart = AddListingToCart::run($firstListing, 2, null, $this->guestToken);
+    AddListingToCart::run($secondListing, 3, null, $this->guestToken, $cart->version);
+
+    $otherGuestToken = strtolower((string) Str::ulid());
+    AddListingToCart::run($firstListing, 4, null, $otherGuestToken);
+
+    $buyer = User::factory()->create();
+    AddListingToCart::run($firstListing, 1, $buyer, strtolower((string) Str::ulid()));
+
+    expect(GetCartItemCount::run(null, $this->guestToken))->toBe(5)
+        ->and(GetCartItemCount::run(null, $otherGuestToken))->toBe(4)
+        ->and(GetCartItemCount::run($buyer, $this->guestToken))->toBe(1);
 });
 
 test('quantity cannot exceed locked listing inventory', function (): void {

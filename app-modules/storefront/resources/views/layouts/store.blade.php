@@ -25,7 +25,10 @@
                 <div class="hidden items-center gap-7 text-sm font-medium lg:flex">
                     <a href="{{ route('home') }}#marketplace" class="text-zinc-600 transition-colors hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white">{{ __('Browse assets') }}</a>
                     <a href="{{ route('storefront.listings.create') }}" wire:navigate class="text-zinc-600 transition-colors hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white">{{ __('Sell an asset') }}</a>
-                    <a href="{{ route('storefront.cart.show') }}" wire:navigate class="text-zinc-600 transition-colors hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white">{{ __('Cart') }}</a>
+                    <a href="{{ route('storefront.cart.show') }}" wire:navigate class="inline-flex items-center gap-2 text-zinc-600 transition-colors hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white">
+                        <span>{{ __('Cart') }}</span>
+                        <livewire:storefront::cart-item-count wire:key="cart-item-count-desktop" />
+                    </a>
 
                     <form method="POST" action="{{ route('locale.update', ['locale' => app()->getLocale() === 'fr' ? 'en' : 'fr']) }}">
                         @csrf
@@ -51,7 +54,10 @@
                 <div class="mx-auto grid max-w-[1400px] gap-1 text-sm font-medium">
                     <a href="{{ route('home') }}#marketplace" class="rounded-xl px-3 py-3 hover:bg-zinc-100 dark:hover:bg-zinc-900">{{ __('Browse assets') }}</a>
                     <a href="{{ route('storefront.listings.create') }}" wire:navigate class="rounded-xl px-3 py-3 hover:bg-zinc-100 dark:hover:bg-zinc-900">{{ __('Sell an asset') }}</a>
-                    <a href="{{ route('storefront.cart.show') }}" wire:navigate class="rounded-xl px-3 py-3 hover:bg-zinc-100 dark:hover:bg-zinc-900">{{ __('Cart') }}</a>
+                    <a href="{{ route('storefront.cart.show') }}" wire:navigate class="flex items-center justify-between rounded-xl px-3 py-3 hover:bg-zinc-100 dark:hover:bg-zinc-900">
+                        <span>{{ __('Cart') }}</span>
+                        <livewire:storefront::cart-item-count wire:key="cart-item-count-mobile" />
+                    </a>
                     @auth
                         <a href="{{ route('dashboard') }}" wire:navigate class="rounded-xl px-3 py-3 hover:bg-zinc-100 dark:hover:bg-zinc-900">{{ __('Account') }}</a>
                     @else

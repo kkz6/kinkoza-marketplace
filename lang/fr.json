@@ -5,6 +5,7 @@
     "Browse assets": "Parcourir les actifs",
     "Sell an asset": "Vendre un actif",
     "Cart": "Panier",
+    "{0} No items in cart|{1} :count item in cart|[2,*] :count items in cart": "{0} Aucun article dans le panier|{1} :count article dans le panier|[2,*] :count articles dans le panier",
     "Account": "Compte",
     "Sign in": "Se connecter",
     "Toggle navigation": "Ouvrir ou fermer la navigation",
