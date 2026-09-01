@@ -40,9 +40,9 @@ class CartFactory extends Factory
     public function forBuyer(User $buyer): static
     {
         return $this->state(fn (): array => [
-            'buyer_id' => $buyer->getKey(),
+            'buyer_id' => $buyer->id,
             'guest_token' => null,
-            'active_key' => "buyer:{$buyer->getKey()}",
+            'active_key' => "buyer:{$buyer->id}",
         ]);
     }
 

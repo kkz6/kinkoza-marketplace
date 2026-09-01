@@ -241,9 +241,7 @@ class CheckoutCart
     private function lockPublishedListings(EloquentCollection $cartItems): EloquentCollection
     {
         $listingIds = $cartItems
-            ->pluck('listing_id')
-            ->filter()
-            ->map(fn (mixed $listingId): string => (string) $listingId)
+            ->flatMap(fn (CartItem $item): array => $item->listing_id === null ? [] : [$item->listing_id])
             ->unique()
             ->sort()
             ->values();
@@ -258,13 +256,17 @@ class CheckoutCart
             ->orderBy('id')
             ->lockForUpdate()
             ->get()
-            ->keyBy(fn (Listing $listing): string => (string) $listing->getKey());
+            ->keyBy(fn (Listing $listing): string => $listing->id);
 
         if ($listings->count() !== $listingIds->count()) {
             $missingListingId = $listingIds
                 ->first(fn (string $listingId): bool => ! $listings->has($listingId));
 
-            throw ListingUnavailable::forListing((string) $missingListingId);
+            if (! is_string($missingListingId)) {
+                throw ListingUnavailable::forListing('deleted');
+            }
+
+            throw ListingUnavailable::forListing($missingListingId);
         }
 
         return $listings;
@@ -308,20 +310,25 @@ class CheckoutCart
         $lines = [];
 
         foreach ($cartItems->values() as $index => $cartItem) {
-            $listingId = (string) $cartItem->listing_id;
+            $listingId = $cartItem->listing_id;
+
+            if ($listingId === null) {
+                throw ListingUnavailable::forListing('deleted');
+            }
+
             $listing = $listings->get($listingId);
 
             if (! $listing) {
                 throw ListingUnavailable::forListing($listingId);
             }
 
-            $quantity = (int) $cartItem->quantity;
+            $quantity = $cartItem->quantity;
             $listingCurrency = $this->listingCurrency($listing);
             $lineCurrency = $this->currencyOf($cartItem->getAttribute('currency'));
             $availableQuantity = $this->listingInventoryQuantity($listing);
 
             if ($quantity < 1) {
-                throw InvalidCartItemQuantity::forItem((string) $cartItem->getKey());
+                throw InvalidCartItemQuantity::forItem($cartItem->id);
             }
 
             if ($listingCurrency !== $cartCurrency) {
@@ -394,8 +401,8 @@ class CheckoutCart
     private function assertOrderMatchesRequest(Order $order, User $buyer, Cart $cart): Order
     {
         if (
-            $this->orderBuyerId($order) === (string) $buyer->getKey()
-            && (string) $order->getAttribute('cart_id') === (string) $cart->getKey()
+            $this->orderBuyerId($order) === $buyer->id
+            && $order->cart_id === $cart->id
         ) {
             return $order->loadMissing(['items', 'invoice.items']);
         }
@@ -405,7 +412,7 @@ class CheckoutCart
 
     private function assertCartOwnedByBuyer(Cart $cart, User $buyer): void
     {
-        if ((string) $cart->buyer_id === (string) $buyer->getKey()) {
+        if ($cart->buyer_id === $buyer->id) {
             return;
         }
 
@@ -418,7 +425,7 @@ class CheckoutCart
             return;
         }
 
-        throw CartNotActive::forCart((string) $cart->getKey());
+        throw CartNotActive::forCart($cart->id);
     }
 
     private function assertCartVersion(Cart $cart, int $expectedVersion): void
@@ -433,9 +440,9 @@ class CheckoutCart
     /** @param  EloquentCollection<string, Listing>  $listings */
     private function assertListingsNotOwnedByBuyer(EloquentCollection $listings, User $buyer): void
     {
-        $buyerId = (string) $buyer->getKey();
+        $buyerId = $buyer->id;
         $containsOwnListing = $listings->contains(
-            fn (Listing $listing): bool => (string) $listing->getAttribute('seller_id') === $buyerId,
+            fn (Listing $listing): bool => $listing->seller_id === $buyerId,
         );
 
         if (! $containsOwnListing) {

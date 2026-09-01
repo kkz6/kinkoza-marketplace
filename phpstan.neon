@@ -1,5 +1,6 @@
 includes:
     - vendor/larastan/larastan/extension.neon
+    - vendor/lorisleiva/laravel-actions/extension.neon
     - vendor/nesbot/carbon/extension.neon
 
 parameters:
@@ -10,8 +11,15 @@ parameters:
         - database/
         - routes/
         - app-modules/catalog/src/
+        - app-modules/catalog/database/
+        - app-modules/catalog/routes/
         - app-modules/cart/src/
+        - app-modules/cart/database/
+        - app-modules/cart/routes/
         - app-modules/sales/src/
+        - app-modules/sales/database/
+        - app-modules/sales/routes/
         - app-modules/storefront/src/
+        - app-modules/storefront/routes/
 
-    level: 7
+    level: max

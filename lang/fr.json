@@ -168,6 +168,8 @@
     "A valid guest ULID is required when no buyer is present.": "Un ULID invité valide est obligatoire lorsqu’aucun acheteur n’est présent.",
     "A valid guest ULID is required to restore a cart.": "Un ULID invité valide est obligatoire pour restaurer un panier.",
     "Cart quantity must be greater than zero.": "La quantité du panier doit être supérieure à zéro.",
+    "Default currency configuration must be a string.": "La devise par défaut configurée doit être une chaîne de caractères.",
+    "The cart operation did not return a cart.": "L’opération du panier n’a pas renvoyé de panier.",
     "Listing currency must be a string-backed value.": "La devise de l’annonce doit être représentée par une chaîne de caractères.",
     "Listing title must be a string.": "Le titre de l’annonce doit être une chaîne de caractères.",
     "Listing price must be an integer minor-unit amount.": "Le prix de l’annonce doit être un montant entier exprimé en unités monétaires mineures.",

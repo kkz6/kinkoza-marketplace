@@ -24,10 +24,12 @@ class GetOrCreateCart
 
         [$buyerId, $normalizedGuestToken, $activeKey] = $this->identity($buyer, $guestToken);
 
-        return Cache::lock($this->identityLockKey($activeKey), self::LOCK_SECONDS)
+        $cart = Cache::lock($this->identityLockKey($activeKey), self::LOCK_SECONDS)
             ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(
                 fn (): Cart => $this->findOrCreateActiveCart($buyerId, $normalizedGuestToken, $activeKey),
                 self::TRANSACTION_ATTEMPTS,
             ));
+
+        return $this->ensureCart($cart);
     }
 }

@@ -61,10 +61,17 @@ class User extends Authenticatable implements HasLocalePreference, MustVerifyEma
     public function preferredLocale(): string
     {
         $locale = $this->getAttribute('locale');
-        $supportedLocales = array_keys(config('locales.supported', []));
+        $supportedLocaleConfiguration = config('locales.supported', []);
+        $fallbackLocale = config('app.fallback_locale', 'en');
+
+        if (! is_array($supportedLocaleConfiguration) || ! is_string($fallbackLocale)) {
+            return 'en';
+        }
+
+        $supportedLocales = array_keys($supportedLocaleConfiguration);
 
         return is_string($locale) && in_array($locale, $supportedLocales, true)
             ? $locale
-            : (string) config('app.fallback_locale', 'en');
+            : $fallbackLocale;
     }
 }

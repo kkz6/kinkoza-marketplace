@@ -10,6 +10,7 @@ use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Catalog\Enums\ListingCategory;
 use Kinkoza\Catalog\Enums\ListingStatus;
 use Kinkoza\Catalog\Models\Listing;
+use UnexpectedValueException;
 
 /**
  * @extends Factory<Listing>
@@ -23,7 +24,13 @@ class ListingFactory extends Factory
      */
     public function definition(): array
     {
-        $title = Str::title(fake()->unique()->words(4, true));
+        $words = fake()->unique()->words(4, true);
+
+        if (! is_string($words)) {
+            throw new UnexpectedValueException('Generated listing title must be a string.');
+        }
+
+        $title = Str::title($words);
         $slug = Str::slug($title).'-'.Str::lower(Str::random(6));
 
         $location = fake()->randomElement([
@@ -33,6 +40,14 @@ class ListingFactory extends Factory
             ['country' => Country::Belgium, 'city' => 'Antwerp'],
             ['country' => Country::Luxembourg, 'city' => 'Luxembourg'],
         ]);
+
+        if (
+            ! is_array($location)
+            || ! ($location['country'] ?? null) instanceof Country
+            || ! is_string($location['city'] ?? null)
+        ) {
+            throw new UnexpectedValueException('Generated listing location is invalid.');
+        }
 
         return [
             'seller_id' => User::factory(),

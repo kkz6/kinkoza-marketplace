@@ -26,7 +26,7 @@ class OrderConfirmation extends Component
             ->where('buyer_id', Auth::id())
             ->firstOrFail();
 
-        $this->orderId = (string) $ownedOrder->getKey();
+        $this->orderId = $ownedOrder->id;
     }
 
     #[Computed]

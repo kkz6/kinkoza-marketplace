@@ -28,13 +28,13 @@ class AddListingToCart
         $this->assertPositiveQuantity($quantity);
 
         if ($buyer) {
-            $this->assertListingNotOwnedByBuyer($listing, (string) $buyer->getKey());
+            $this->assertListingNotOwnedByBuyer($listing, $buyer->id);
             $this->findOrClaimBuyerCart($buyer, $guestToken);
         }
 
         [$buyerId, $normalizedGuestToken, $activeKey] = $this->identity($buyer, $guestToken);
 
-        return Cache::lock($this->identityLockKey($activeKey), self::LOCK_SECONDS)
+        $cart = Cache::lock($this->identityLockKey($activeKey), self::LOCK_SECONDS)
             ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(function () use (
                 $activeKey,
                 $buyerId,
@@ -44,12 +44,12 @@ class AddListingToCart
                 $quantity,
             ): Cart {
                 $cart = $this->findOrCreateActiveCart($buyerId, $normalizedGuestToken, $activeKey);
-                $cart = $this->lockCart((string) $cart->getKey());
+                $cart = $this->lockCart($cart->id);
 
                 $this->assertActive($cart);
                 $this->assertVersion($cart, $expectedVersion);
 
-                $lockedListing = $this->lockPublishedListing((string) $listing->getKey());
+                $lockedListing = $this->lockPublishedListing($listing->id);
                 $this->assertListingNotOwnedByBuyer($lockedListing, $buyerId);
                 $listingCurrency = $this->currencyOf($lockedListing);
                 $listingPriceMinor = $this->listingPriceMinor($lockedListing);
@@ -80,7 +80,7 @@ class AddListingToCart
                     CartItem::query()->forceCreate([
                         'cart_id' => $cart->getKey(),
                         'listing_id' => $lockedListing->getKey(),
-                        'sku' => (string) $lockedListing->getKey(),
+                        'sku' => $lockedListing->id,
                         'title' => $this->listingTitle($lockedListing),
                         'currency' => $listingCurrency,
                         'unit_price_minor' => $listingPriceMinor,
@@ -91,5 +91,7 @@ class AddListingToCart
 
                 return $this->recalculate($cart);
             }, self::TRANSACTION_ATTEMPTS));
+
+        return $this->ensureCart($cart);
     }
 }

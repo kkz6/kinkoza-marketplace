@@ -14,6 +14,11 @@ use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Sales\Database\Factories\InvoiceFactory;
 use Kinkoza\Sales\Enums\InvoiceStatus;
 
+/**
+ * @property string $id
+ * @property string $number
+ * @property string $order_id
+ */
 #[Guarded(['*'])]
 class Invoice extends Model
 {

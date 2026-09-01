@@ -36,9 +36,9 @@ class SendOrderConfirmation implements ShouldQueueAfterCommit
         }
 
         $buyer->notify(new OrderConfirmation(
-            orderId: (string) $order->getKey(),
+            orderId: $order->id,
             orderNumber: $orderNumber,
-            invoiceId: (string) $invoice->getKey(),
+            invoiceId: $invoice->id,
             invoiceNumber: $invoiceNumber,
         ));
     }

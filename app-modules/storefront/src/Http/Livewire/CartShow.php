@@ -30,12 +30,12 @@ class CartShow extends Component
     public function mount(
         CartIdentity $identity,
     ): void {
-        $cart = GetOrCreateCart::run(
+        $cart = GetOrCreateCart::make()->handle(
             $identity->buyer(),
             $identity->guestToken(),
         );
 
-        $this->cartId = (string) $cart->getKey();
+        $this->cartId = $cart->id;
     }
 
     #[Computed]
@@ -66,7 +66,7 @@ class CartShow extends Component
         int $version,
     ): void {
         try {
-            UpdateCartItemQuantity::run($this->cart, $itemId, $quantity, $version);
+            UpdateCartItemQuantity::make()->handle($this->cart, $itemId, $quantity, $version);
         } catch (DomainException|StaleCartVersion $exception) {
             $this->addError('cart', DomainErrorMessage::for($exception));
 
@@ -87,7 +87,7 @@ class CartShow extends Component
         int $version,
     ): void {
         try {
-            RemoveCartItem::run($this->cart, $itemId, $version);
+            RemoveCartItem::make()->handle($this->cart, $itemId, $version);
         } catch (DomainException|StaleCartVersion $exception) {
             $this->addError('cart', DomainErrorMessage::for($exception));
 

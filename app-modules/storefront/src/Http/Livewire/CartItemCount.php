@@ -16,7 +16,7 @@ class CartItemCount extends Component
 
     public function mount(CartIdentity $identity): void
     {
-        $this->count = GetCartItemCount::run(
+        $this->count = GetCartItemCount::make()->handle(
             $identity->buyer(),
             $identity->guestToken(),
         );
@@ -33,7 +33,7 @@ class CartItemCount extends Component
 
         $identity = resolve(CartIdentity::class);
 
-        $this->count = GetCartItemCount::run(
+        $this->count = GetCartItemCount::make()->handle(
             $identity->buyer(),
             $identity->guestToken(),
         );

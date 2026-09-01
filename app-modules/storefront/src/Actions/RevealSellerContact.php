@@ -20,7 +20,7 @@ class RevealSellerContact
     {
         Gate::forUser($buyer)->authorize('revealContact', $listing);
 
-        $key = "contact-reveal:{$buyer->getAuthIdentifier()}";
+        $key = "contact-reveal:{$buyer->id}";
 
         if (! RateLimiter::attempt($key, 5, static fn (): bool => true, 60)) {
             throw ContactRevealRateLimited::forBuyer();

@@ -18,13 +18,13 @@ class RemoveCartItem
 
     public function handle(Cart $cart, string $itemId, int $expectedVersion): Cart
     {
-        return Cache::lock($this->cartLockKey((string) $cart->getKey()), self::LOCK_SECONDS)
+        $updatedCart = Cache::lock($this->cartLockKey($cart->id), self::LOCK_SECONDS)
             ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(function () use (
                 $cart,
                 $expectedVersion,
                 $itemId,
             ): Cart {
-                $lockedCart = $this->lockCart((string) $cart->getKey());
+                $lockedCart = $this->lockCart($cart->id);
 
                 $this->assertActive($lockedCart);
                 $this->assertVersion($lockedCart, $expectedVersion);
@@ -43,5 +43,7 @@ class RemoveCartItem
 
                 return $this->recalculate($lockedCart);
             }, self::TRANSACTION_ATTEMPTS));
+
+        return $this->ensureCart($updatedCart);
     }
 }

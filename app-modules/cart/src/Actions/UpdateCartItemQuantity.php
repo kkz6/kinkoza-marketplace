@@ -24,14 +24,14 @@ class UpdateCartItemQuantity
     ): Cart {
         $this->assertPositiveQuantity($quantity);
 
-        return Cache::lock($this->cartLockKey((string) $cart->getKey()), self::LOCK_SECONDS)
+        $updatedCart = Cache::lock($this->cartLockKey($cart->id), self::LOCK_SECONDS)
             ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(function () use (
                 $cart,
                 $expectedVersion,
                 $itemId,
                 $quantity,
             ): Cart {
-                $lockedCart = $this->lockCart((string) $cart->getKey());
+                $lockedCart = $this->lockCart($cart->id);
 
                 $this->assertActive($lockedCart);
                 $this->assertVersion($lockedCart, $expectedVersion);
@@ -42,7 +42,7 @@ class UpdateCartItemQuantity
                     throw ListingUnavailable::forListing($itemId);
                 }
 
-                $listing = $this->lockPublishedListing((string) $itemReference->listing_id);
+                $listing = $this->lockPublishedListing($itemReference->listing_id);
                 $item = $this->lockItem($lockedCart, $itemId);
 
                 $this->assertInventory($listing, $quantity);
@@ -54,5 +54,7 @@ class UpdateCartItemQuantity
 
                 return $this->recalculate($lockedCart);
             }, self::TRANSACTION_ATTEMPTS));
+
+        return $this->ensureCart($updatedCart);
     }
 }

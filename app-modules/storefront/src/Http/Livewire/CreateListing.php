@@ -36,7 +36,7 @@ class CreateListing extends Component
 
         abort_unless($seller instanceof User, 403);
 
-        $listing = CreateCatalogListing::run($seller, $this->form->toData());
+        $listing = CreateCatalogListing::make()->handle($seller, $this->form->toData());
 
         $message = $listing->status === ListingStatus::PendingReview
             ? __('Your listing was submitted for review.')

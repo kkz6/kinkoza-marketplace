@@ -36,7 +36,7 @@ trait InteractsWithCarts
     private function identity(?User $buyer, string $guestToken): array
     {
         if ($buyer) {
-            $buyerId = (string) $buyer->getKey();
+            $buyerId = $buyer->id;
 
             return [$buyerId, null, "buyer:{$buyerId}"];
         }
@@ -93,18 +93,20 @@ trait InteractsWithCarts
             throw new InvalidArgumentException((string) __('A valid guest ULID is required to restore a cart.'));
         }
 
-        $buyerId = (string) $buyer->getKey();
+        $buyerId = $buyer->id;
         $buyerKey = "buyer:{$buyerId}";
         $guestKey = "guest:{$guestToken}";
 
-        return Cache::lock($this->identityLockKey($buyerKey), self::LOCK_SECONDS)
-            ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => Cache::lock(
+        $cart = Cache::lock($this->identityLockKey($buyerKey), self::LOCK_SECONDS)
+            ->block(self::LOCK_WAIT_SECONDS, fn (): Cart => $this->ensureCart(Cache::lock(
                 $this->identityLockKey($guestKey),
                 self::LOCK_SECONDS,
             )->block(self::LOCK_WAIT_SECONDS, fn (): Cart => DB::transaction(
                 fn (): Cart => $this->claimGuestCart($buyerId, $guestToken, $buyerKey, $guestKey),
                 self::TRANSACTION_ATTEMPTS,
-            )));
+            ))));
+
+        return $this->ensureCart($cart);
     }
 
     private function claimGuestCart(
@@ -160,10 +162,10 @@ trait InteractsWithCarts
         }
 
         $listingIds = $buyerItemReferences
-            ->concat($guestItemReferences)
-            ->pluck('listing_id')
-            ->filter()
-            ->map(fn (mixed $listingId): string => (string) $listingId)
+            ->flatMap(fn (CartItem $item): array => $item->listing_id === null ? [] : [$item->listing_id])
+            ->concat($guestItemReferences->flatMap(
+                fn (CartItem $item): array => $item->listing_id === null ? [] : [$item->listing_id],
+            ))
             ->unique()
             ->sort()
             ->values();
@@ -242,7 +244,9 @@ trait InteractsWithCarts
             'version' => $guestCart->version + 1,
         ])->save();
 
-        return $guestCart->fresh(['items']);
+        $guestCart->refresh()->load('items');
+
+        return $guestCart;
     }
 
     private function abandon(Cart $cart): void
@@ -313,7 +317,7 @@ trait InteractsWithCarts
         }
 
         throw InsufficientInventory::forListing(
-            (string) $listing->getKey(),
+            $listing->id,
             $requestedQuantity,
             $availableQuantity,
         );
@@ -321,7 +325,7 @@ trait InteractsWithCarts
 
     private function assertListingNotOwnedByBuyer(Listing $listing, ?string $buyerId): void
     {
-        if ($buyerId === null || (string) $listing->getAttribute('seller_id') !== $buyerId) {
+        if ($buyerId === null || $listing->seller_id !== $buyerId) {
             return;
         }
 
@@ -343,7 +347,7 @@ trait InteractsWithCarts
             return;
         }
 
-        throw CartNotActive::forCart((string) $cart->getKey());
+        throw CartNotActive::forCart($cart->id);
     }
 
     private function assertPositiveQuantity(int $quantity): void
@@ -365,7 +369,9 @@ trait InteractsWithCarts
             'version' => $cart->version + 1,
         ])->save();
 
-        return $cart->fresh(['items']);
+        $cart->refresh()->load('items');
+
+        return $cart;
     }
 
     private function currencyOf(Listing $listing): string
@@ -418,7 +424,22 @@ trait InteractsWithCarts
 
     private function defaultCurrency(): string
     {
-        return strtoupper((string) config('app.currency', 'EUR'));
+        $currency = config('app.currency', 'EUR');
+
+        if (! is_string($currency)) {
+            throw new UnexpectedValueException((string) __('Default currency configuration must be a string.'));
+        }
+
+        return strtoupper($currency);
+    }
+
+    private function ensureCart(mixed $value): Cart
+    {
+        if (! $value instanceof Cart) {
+            throw new UnexpectedValueException((string) __('The cart operation did not return a cart.'));
+        }
+
+        return $value;
     }
 
     private function identityLockKey(string $activeKey): string

@@ -17,6 +17,13 @@ use Kinkoza\Catalog\Enums\Currency;
 use Kinkoza\Sales\Database\Factories\OrderFactory;
 use Kinkoza\Sales\Enums\OrderStatus;
 
+/**
+ * @property string $id
+ * @property string $number
+ * @property string $buyer_id
+ * @property string $cart_id
+ * @property string $idempotency_key
+ */
 #[Guarded(['*'])]
 class Order extends Model
 {

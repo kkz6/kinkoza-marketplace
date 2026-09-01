@@ -59,8 +59,8 @@ class CartItemFactory extends Factory
         }
 
         return $this->state(fn (): array => [
-            'listing_id' => $listing->getKey(),
-            'sku' => (string) $listing->getKey(),
+            'listing_id' => $listing->id,
+            'sku' => $listing->id,
             'title' => $title,
             'currency' => $currency,
             'unit_price_minor' => $priceMinor,

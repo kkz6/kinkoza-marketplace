@@ -50,7 +50,7 @@ class ListingShow extends Component
             ->firstOrFail();
 
         $this->authorize('view', $listing);
-        $this->listingId = (string) $listing->getKey();
+        $this->listingId = $listing->id;
     }
 
     #[Computed]
@@ -88,7 +88,7 @@ class ListingShow extends Component
         ]);
 
         try {
-            $cart = AddListingToCart::run(
+            $cart = AddListingToCart::make()->handle(
                 $this->listing,
                 $this->quantity,
                 $identity->buyer(),
@@ -120,7 +120,7 @@ class ListingShow extends Component
         }
 
         try {
-            RevealSellerContact::run($user, $this->listing, request()->ip());
+            RevealSellerContact::make()->handle($user, $this->listing, request()->ip());
         } catch (ContactRevealRateLimited $exception) {
             $this->addError('contact', $exception->getMessage());
 

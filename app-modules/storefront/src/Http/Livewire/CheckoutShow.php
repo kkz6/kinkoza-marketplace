@@ -36,12 +36,12 @@ class CheckoutShow extends Component
 
     public function mount(CartIdentity $identity): void
     {
-        $cart = GetOrCreateCart::run(
+        $cart = GetOrCreateCart::make()->handle(
             $identity->buyer(),
             $identity->guestToken(),
         );
 
-        $this->cartId = (string) $cart->getKey();
+        $this->cartId = $cart->id;
         $this->cartVersion = $cart->version;
         $this->idempotencyKey = (string) Str::ulid();
     }
@@ -65,7 +65,7 @@ class CheckoutShow extends Component
         abort_unless($buyer instanceof User, 403);
 
         try {
-            $order = CheckoutCart::run(
+            $order = CheckoutCart::make()->handle(
                 $this->cart,
                 $buyer,
                 $this->idempotencyKey,
@@ -86,7 +86,7 @@ class CheckoutShow extends Component
 
         $this->redirectRoute(
             'storefront.orders.show',
-            ['order' => $order->getKey()],
+            ['order' => $order->id],
             navigate: true,
         );
     }

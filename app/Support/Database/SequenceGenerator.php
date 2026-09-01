@@ -4,6 +4,7 @@ namespace App\Support\Database;
 
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
+use UnexpectedValueException;
 
 class SequenceGenerator
 {
@@ -38,8 +39,13 @@ class SequenceGenerator
                 ->lockForUpdate()
                 ->value('value');
 
-            $first = (int) $current + 1;
-            $last = (int) $current + $count;
+            if (! is_int($current) && (! is_string($current) || ! ctype_digit($current))) {
+                throw new UnexpectedValueException('Stored sequence value must be a non-negative integer.');
+            }
+
+            $currentValue = is_int($current) ? $current : (int) $current;
+            $first = $currentValue + 1;
+            $last = $currentValue + $count;
 
             DB::table('sequences')
                 ->where('name', $name)

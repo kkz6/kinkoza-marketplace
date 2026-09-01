@@ -41,7 +41,7 @@ Implemented behavior includes:
 | Application operations | `lorisleiva/laravel-actions` through `Action::run()` and action adapters |
 | Persistence | Relational database; SQLite locally, with MySQL or PostgreSQL recommended for production |
 | Tests | Pest 5 |
-| Quality | Pint and Larastan/PHPStan level 7 |
+| Quality | Pint and Larastan/PHPStan at `level: max` |
 | Local tooling | Laravel Herd and Laravel Debugbar |
 | CI | GitHub Actions on pushes to `main` and pull requests |
 
@@ -257,7 +257,7 @@ Laravel Debugbar is installed as a development dependency and is available local
 
 ## Quality checks and CI
 
-The complete PHP quality gate clears cached configuration, checks Pint formatting, runs PHPStan at level 7, and executes the root and module Pest suites:
+The complete PHP quality gate clears cached configuration, checks Pint formatting, runs Larastan/PHPStan at `level: max`, and executes the root and module Pest suites:
 
 ```bash
 herd composer test
@@ -273,6 +273,8 @@ npm run build
 ```
 
 The GitHub Actions workflow runs on pushes to `main` and pull requests with PHP 8.4 and Node 22. It installs the application, builds assets, and runs the same PHP quality gate. Workflow actions are pinned, repository permissions are read-only, and checkout credentials are not persisted.
+
+Static analysis covers the host application, bootstrap, configuration, database, and routes plus every module's production source, factories, migrations, seeders, and routes. There is no PHPStan baseline and no ignored-error configuration; CI fails on any reported error.
 
 Feature coverage includes publication windows, seller policies, filters, cart identity isolation and merging, stale-version rejection, inventory and currency checks, rollback and idempotency, immutable snapshots, order ownership, contact authorization, locked Livewire state, localization, queued notification wiring, and ULID/sequence allocation.
 

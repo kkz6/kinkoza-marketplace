@@ -9,13 +9,21 @@ use Kinkoza\Storefront\Http\Livewire\ListingShow;
 use Kinkoza\Storefront\Http\Livewire\ListingsIndex;
 use Kinkoza\Storefront\Http\Livewire\OrderConfirmation;
 
-Route::middleware('web')->group(function (): void {
+$supportedLocales = config('locales.supported', []);
+
+if (! is_array($supportedLocales)) {
+    throw new UnexpectedValueException('Supported locales configuration must be an array.');
+}
+
+$supportedLocaleNames = array_values(array_filter(array_keys($supportedLocales), is_string(...)));
+
+Route::middleware('web')->group(function () use ($supportedLocaleNames): void {
     Route::get('/', ListingsIndex::class)
         ->middleware('throttle:storefront-search')
         ->name('home');
 
     Route::post('/locale/{locale}', UpdateLocale::class)
-        ->whereIn('locale', array_keys(config('locales.supported', [])))
+        ->whereIn('locale', $supportedLocaleNames)
         ->middleware('throttle:storefront-action')
         ->name('locale.update');
 
