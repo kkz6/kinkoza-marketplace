@@ -32,10 +32,18 @@
                                 <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{{ __(':amount each', ['amount' => \Kinkoza\Catalog\Enums\Currency::from($item->currency)->format($item->unit_price_minor)]) }}</p>
 
                                 <div class="mt-4 flex flex-wrap items-center gap-3">
-                                    <label class="flex items-center gap-2 text-sm">
-                                        <span class="sr-only">{{ __('Quantity for :title', ['title' => $item->title]) }}</span>
-                                        <input type="number" min="1" max="{{ $item->listing?->inventory_quantity ?? $item->quantity }}" value="{{ $item->quantity }}" wire:change="updateQuantity('{{ $item->id }}', $event.target.value, {{ $cart->version }})" class="w-20 rounded-xl border-zinc-300 bg-white focus:border-blue-600 focus:ring-blue-600 dark:border-zinc-700 dark:bg-zinc-950">
-                                    </label>
+                                    <flux:input
+                                        type="number"
+                                        min="1"
+                                        :max="$item->listing?->inventory_quantity ?? $item->quantity"
+                                        :value="$item->quantity"
+                                        :aria-label="__('Quantity for :title', ['title' => $item->title])"
+                                        wire:change="updateQuantity('{{ $item->id }}', $event.target.value, {{ $cart->version }})"
+                                        size="sm"
+                                        class="w-20"
+                                        inputmode="numeric"
+                                        data-test="cart-item-quantity"
+                                    />
                                     <button type="button" wire:click="remove('{{ $item->id }}', {{ $cart->version }})" wire:loading.attr="disabled" class="text-sm font-medium text-zinc-500 underline decoration-zinc-300 underline-offset-4 hover:text-red-700 disabled:opacity-60 dark:text-zinc-400 dark:hover:text-red-300">{{ __('Remove') }}</button>
                                 </div>
                             </div>

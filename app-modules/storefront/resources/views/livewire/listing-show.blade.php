@@ -39,11 +39,17 @@
                         <div class="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">{{ __('You own this listing. Its current status is :status.', ['status' => __($listing->status->label())]) }}</div>
                     @elseif($listing->isPubliclyVisible() && $listing->inventory_quantity > 0)
                         <form wire:submit="addToCart" class="mt-6 grid gap-4">
-                            <label class="grid gap-2 text-sm font-medium">
-                                {{ __('Quantity') }}
-                                <input wire:model="quantity" type="number" min="1" max="{{ $listing->inventory_quantity }}" class="w-28 rounded-xl border-zinc-300 bg-zinc-50 text-zinc-950 focus:border-blue-600 focus:ring-blue-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100">
-                            </label>
-                            <flux:error name="quantity" />
+                            <flux:input
+                                wire:model="quantity"
+                                type="number"
+                                name="quantity"
+                                :label="__('Quantity')"
+                                min="1"
+                                :max="$listing->inventory_quantity"
+                                class="w-28"
+                                inputmode="numeric"
+                                data-test="listing-quantity"
+                            />
                             <button type="submit" wire:loading.attr="disabled" class="rounded-full bg-blue-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-blue-800 active:translate-y-px disabled:cursor-wait disabled:opacity-60 dark:bg-blue-400 dark:text-zinc-950 dark:hover:bg-blue-300">
                                 <span wire:loading.remove wire:target="addToCart">{{ __('Add to cart') }}</span>
                                 <span wire:loading wire:target="addToCart">{{ __('Adding...') }}</span>

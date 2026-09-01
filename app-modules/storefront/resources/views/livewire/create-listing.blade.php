@@ -27,11 +27,16 @@
                         <flux:error name="form.category" />
                     </label>
 
-                    <label class="grid gap-2 text-sm font-medium">
-                        {{ __('Quantity available') }}
-                        <input wire:model="form.inventoryQuantity" type="number" min="1" max="10000" class="rounded-xl border-zinc-300 bg-zinc-50 focus:border-blue-600 focus:ring-blue-600 dark:border-zinc-700 dark:bg-zinc-950">
-                        <flux:error name="form.inventoryQuantity" />
-                    </label>
+                    <flux:input
+                        wire:model="form.inventoryQuantity"
+                        type="number"
+                        name="form.inventoryQuantity"
+                        :label="__('Quantity available')"
+                        min="1"
+                        max="10000"
+                        inputmode="numeric"
+                        data-test="listing-inventory-quantity"
+                    />
 
                     <label class="grid gap-2 text-sm font-medium md:col-span-2">
                         {{ __('Description') }}
