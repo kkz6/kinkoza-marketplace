@@ -64,7 +64,28 @@ The `listings` table contains:
 | `version` | Revision counter, defaulting to `1`; Sales increments it when inventory is decremented. It is not currently a general optimistic-lock API. |
 | `created_at`, `updated_at` | Laravel timestamps. |
 
-Indexes support public-window, category/price, country/price, and seller/status queries. There is no full-text index.
+The migration contains four deliberate composite indexes:
+
+| Index | Intended query |
+| --- | --- |
+| `status, online_at, offline_at` | Public publication-window filtering. |
+| `status, category, price_minor` | Category results with a price range or price ordering. |
+| `status, country, price_minor` | Country results with a price range or price ordering. |
+| `seller_id, status, updated_at` | An owner's listings grouped by workflow state. |
+
+These indexes support the proof-of-concept filters, but they are not a claim that every filter and sort combination is covered. The title search uses a leading-wildcard `LIKE`, there is no full-text index, the deterministic `id` sort tie-breaker is not explicitly part of the composites, and a query combining category and country may use only one of those filter indexes. Those limitations are acceptable for the current small dataset and are addressed in the 100x evolution plan below.
+
+### Seller metadata boundary
+
+Catalog stores only `seller_id`. Company name, registration number, country, email, phone, email verification, and the mock seller-verification flag belong to the host `App\Models\User`; they are not duplicated on a listing.
+
+This has three consequences:
+
+- Public search may eager-load only the non-sensitive seller columns it needs, currently company name and country.
+- Catalog's `revealContact` policy decides whether a caller may reveal contact information, but Catalog never returns the email or phone. Storefront performs the authorized, throttled, and logged lookup.
+- Seller profile completeness is outside this module. `CreateListing` accepts the supplied host user and does not require company or contact fields itself. A production onboarding or KYB workflow must establish those fields before a seller is allowed to publish.
+
+Seller metadata is live rather than snapshotted on the listing. Renaming a company therefore changes how its existing listings are presented. Commercial snapshots created at checkout belong to Sales, not Catalog.
 
 ### ULID and sequence convention
 
@@ -134,21 +155,46 @@ $sellerListings = Listing::query()
     ->get();
 ```
 
-`ownedBy()` accepts either a `User` instance or a seller ULID string. Catalog does not provide a search repository. Storefront currently composes a `published()` query with a title `whereLike`, category, country, minor-unit price filters, deterministic sorting, and cursor pagination.
+`ownedBy()` accepts either a `User` instance or a seller ULID string. Catalog does not provide a search repository. Storefront owns the public search adapter and currently composes this model query with:
+
+- `published()` as the mandatory starting scope;
+- case-insensitive substring matching on `title` through `whereLike`;
+- allow-listed `ListingCategory` and `Country` enum values;
+- minimum and maximum prices converted to integer minor units;
+- a fixed sort allow-list: newest, price ascending, or price descending;
+- a deterministic ULID tie-breaker; and
+- cursor pagination in pages of 12.
+
+The result query selects only card fields and eager-loads the seller projection used by the template, avoiding an N+1 query. Search and filter state belongs to Storefront and is reflected in the URL there. Catalog deliberately keeps SQL column names and sort directions out of request input.
+
+Cursor pagination avoids the growing offset cost of page-number pagination, but it does not make an unindexed sort free. The default and price queries can still require a filesort or temporary sort for some filter combinations. The current seed contains 12 believable listings and the test suite verifies filter semantics, not production-scale query plans or latency.
 
 ### Read featured listings
 
 ```php
 use Kinkoza\Catalog\Support\CatalogCache;
 
-$featured = app(CatalogCache::class)->featuredPublished(12);
+$featured = resolve(CatalogCache::class)->featuredPublished(12);
 ```
 
 `featured()` is an alias of `featuredPublished()`. Limits are clamped to `1..50`. Results must be published, inside their publication window, and have inventory above zero. They are ordered by newest `online_at`, then newest `sequence`.
 
-The cache uses Laravel's flexible stale-while-revalidate behavior: 60 seconds fresh and 300 seconds stale. Keys include the value of `catalog:listings:version`; invalidation advances that version instead of scanning or deleting result keys.
+The cache uses Laravel's flexible stale-while-revalidate behavior: 60 seconds fresh and 300 seconds stale. Keys include the value of `catalog:listings:version`; invalidation advances that version instead of scanning or deleting result keys. Superseded keys expire naturally.
 
-Only the `CreateListing` action invalidates automatically. Code that updates or deletes listings directly—including publication, price, image, or inventory changes—must call `CatalogCache::invalidate()` after the database transaction commits. The current Sales inventory update does not invalidate this cache, so cached featured results can remain stale within the configured flexible-cache window.
+This is a small featured-listings cache, not a cache for arbitrary search combinations. The current Storefront search does not call `CatalogCache`, so every public result page is read from the database. That choice avoids a high-cardinality cache-key space and complicated invalidation while the proof of concept is small, but it also means the cache does not reduce crawler traffic on the current search page.
+
+#### Invalidation ownership
+
+Invalidation belongs to the workflow that commits a change capable of altering featured results:
+
+| Change | Current owner | Current behavior |
+| --- | --- | --- |
+| Listing creation | `CreateListing` | Invalidates after the listing transaction commits. |
+| Publication, price, image, or deletion | No application workflow yet | A future owning action must invalidate after commit. |
+| Inventory deduction | Sales checkout | Does not currently invalidate Catalog's cache. |
+| Publication-window passage | Time | No event is emitted; freshness/stale TTLs bound the delay. |
+
+The current Sales inventory update can therefore leave an out-of-stock listing in an already-populated featured cache until its flexible-cache window expires. A future cross-module solution should publish an after-commit Catalog event or call a Catalog-owned invalidation action without making Catalog depend on Sales. Direct model writes and factories do not invalidate automatically.
 
 ## Invariants
 
@@ -188,7 +234,7 @@ Gate::authorize('revealContact', $listing);
 
 Public discovery must begin with `published()` so drafts, scheduled listings, expired statuses, and elapsed publication windows do not leak. Database filtering should use enum backing values when a raw value is required. User-provided sort fields must be allow-listed by the caller.
 
-Cache invalidation must happen after a successful write transaction. Direct model writes do not emit an observer that invalidates the catalog.
+Cache invalidation must happen after a successful write transaction. Direct model writes do not emit an observer that invalidates the catalog. The public Storefront search currently bypasses `CatalogCache` entirely.
 
 ## Events
 
@@ -200,15 +246,44 @@ Catalog currently dispatches no domain events and registers no listeners or obse
 
 `ListingSeeder` expects an existing `seller@example.com` user, then creates or updates 12 deterministic demo listings owned by that seller. It is intended for the application's coordinated database seeding flow, not standalone use against an empty users table.
 
-## Extension points
+## Current limitations
 
-- Add catalog write operations as focused Laravel Actions rather than writing guarded lifecycle fields from UI components.
-- Add enum cases together with validation, translations/presentation labels, factories, seed data, filters, and tests that consume them.
-- Add searchable fields with appropriate database indexes or introduce a dedicated search adapter; no search-engine contract exists yet.
-- Invalidate `CatalogCache` after committed create, update, delete, publication, and inventory mutations that can change featured results.
-- Keep checkout and inventory reservation orchestration in Sales; keep cart snapshots in Cart.
-- If Catalog gains routes or views, register them explicitly in `CatalogServiceProvider`; the placeholders are not loaded today.
-- Add domain events only for stable cross-module facts, and preserve the dependency direction by defining those events in Catalog.
+- The application has no listing edit, delete, moderation, or status-transition workflow. The corresponding policy abilities exist, but no HTTP or action entry point consumes them.
+- `CreateListingData` provides types, not semantic validation or authorization. Storefront validates its Livewire form and authorizes the current user before calling the action; any future CLI, import, API, or queue adapter must do the same.
+- The SQL title match is a substring scan. There is no full-text, typo-tolerant, accent-aware, or relevance-ranked search.
+- The public search is not cached, and the featured cache is not rendered by the current Storefront.
+- Only creation invalidates the featured cache automatically. Inventory, publication, price, image, and deletion changes need explicit after-commit integration.
+- `image_url` is an external URL. Catalog does not upload, inspect, proxy, resize, or sign media.
+- Seller company and contact fields are nullable host-user data and are not snapshotted on a listing.
+- The small deterministic seed and SQLite test environment verify behavior, not production query plans or crawler-scale throughput.
+
+## Evolution at 100x traffic
+
+The first scaling step is measurement, not replacing SQL by default. Capture slow-query samples and representative `EXPLAIN` plans on the production database with realistic listing cardinality and filter distributions. Add query-count and latency budgets for the default page and the most common filter combinations.
+
+If indexed SQL remains sufficient:
+
+1. Add database-specific covering indexes for the measured sort paths, including the deterministic `id` tie-breaker where the engine needs it.
+2. Keep cursor pagination and limit the supported sort/filter combinations to ones with predictable plans.
+3. Cache only demonstrably hot, low-cardinality result sets such as the unfiltered first page or curated featured IDs. Cache identifiers or projections rather than broad hydrated model graphs.
+4. Move cache and rate-limit storage from the application database to Redis, and coordinate invalidation through after-commit Catalog events.
+5. Put anonymous read traffic behind an appropriate CDN or edge cache while preserving personalized seller and contact boundaries.
+
+If substring search or filter combinations dominate cost, introduce a dedicated search adapter backed by Scout with Meilisearch or Typesense. Index only public listing documents, update them from after-commit events, retain the database as the source of truth, and make removal from search idempotent. Search-engine adoption must not weaken the `published()` visibility invariant: drafts and elapsed publication windows must be excluded before results reach a caller.
+
+Seller media should move to managed object storage with validated uploads, queued processing, responsive variants, and controlled delivery. External seller URLs should not remain a direct browser dependency at production scale.
+
+## Prioritized next steps
+
+1. Add a production-database search benchmark with a large factory seed, query-count assertions, and `EXPLAIN` snapshots for newest and price sorts.
+2. Add the measured sort indexes or a dedicated search adapter; do not add speculative composites for every possible filter combination.
+3. Introduce Catalog-owned after-commit events for listing and inventory visibility changes, then invalidate or refresh cached projections from idempotent listeners.
+4. Either connect a low-cardinality featured/default result cache to Storefront or remove the unused cache until there is a real reader.
+5. Add authorized listing update, publication, and deletion actions that validate input, enforce ownership, advance `version`, and own cache invalidation.
+6. Define a seller-profile/KYB completeness rule before publication and keep contact retrieval behind Storefront's separate reveal boundary.
+7. Replace external image URLs with managed media storage and queued processing.
+
+Throughout those changes, keep checkout and inventory reservation orchestration in Sales, cart snapshots in Cart, and Catalog free of dependencies on either consumer. If Catalog gains routes or views, register them explicitly in `CatalogServiceProvider`; the placeholder route file is not loaded today.
 
 ## Tests
 

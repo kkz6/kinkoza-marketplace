@@ -162,6 +162,14 @@ Cart line title, currency, and unit price are the commercial values accepted by 
 
 Order and invoice lines copy the same values and calculate `line_total_minor` from the stored unit price and quantity. A later listing edit or deletion cannot rewrite those records.
 
+## Cache consistency boundary
+
+Checkout changes live listing inventory and advances each affected listing's optimistic `version`. The current Storefront search reads listings directly from the database, so a completed purchase is visible to that query on its next request.
+
+Sales intentionally does not invalidate `CatalogCache` inside the checkout transaction. An external cache is not transactional with the database: invalidating it before commit could publish state from a transaction that later rolls back. The existing featured-listing cache is stale-while-revalidate and may therefore continue to include a newly sold-out listing until its stale window closes if a future page starts consuming it.
+
+The production boundary should be a committed inventory-change fact. A listener can invalidate the catalog version after commit for best-effort freshness; an outbox-backed listener should be used when cache convergence must be guaranteed. Consumers must still re-check publication and inventory when a buyer acts, because cache invalidation can improve discovery freshness but cannot enforce stock correctness.
+
 ## Events, queues, and localization
 
 `OrderPlaced` implements `ShouldDispatchAfterCommit`. The provider registers `Kinkoza\Sales\Actions\SendOrderConfirmation` as its listener. Laravel Actions' listener decorator falls back to the action's typed `handle(OrderPlaced $event): void` method.
@@ -178,15 +186,29 @@ herd php artisan queue:work --tries=3
 
 After-commit dispatch prevents a listener from observing a rolled-back order. It is not a transactional outbox: a production system requiring guaranteed external delivery should persist an outbox record in the checkout transaction and dispatch it idempotently.
 
-## Extension points
+## Production and 100x traffic plan
 
-- Keep checkout orchestration, transaction handling, and invariant enforcement together in `CheckoutCart`. Callers and tests should enter the workflow through `CheckoutCart::run()`.
-- Model payment authorization/capture as a separate state machine instead of marking invoices paid inside the current checkout transaction.
-- Add tax, shipping, discounts, or fees with explicit line/total fields and preserve the same values across order and invoice snapshots.
-- Keep fulfillment, cancellation, refund, and invoice-transition operations in focused actions with their own authorization and idempotency rules.
-- Add stable post-commit events for new cross-module facts. Use an outbox for delivery guarantees beyond the local queue transaction boundary.
-- If inventory changes should update featured catalog results immediately, coordinate a post-commit `CatalogCache` invalidation; checkout currently advances listing versions but does not invalidate that cache.
-- Add HTTP or API adapters outside Sales and validate ownership before passing a cart to `CheckoutCart`.
+The local SQLite setup is convenient for the POC, not a contention model. Before accepting production traffic:
+
+1. Run checkout on PostgreSQL or MySQL with a transactional storage engine, and exercise the exact isolation level under concurrent workers.
+2. Put queues, distributed locks, and shared cache state on managed infrastructure. Supervise workers, configure dead-letter handling, and alert on queue age and repeated job failures.
+3. Record an outbox row beside each committed order. Publish order, inventory, notification, payment, and cache-convergence messages from that outbox with consumer idempotency.
+4. Measure cart and listing lock wait time, deadlocks, transaction retries, conditional-inventory failures, idempotency conflicts, checkout latency, and notification lag.
+5. Load-test the hottest listing and the same buyer retrying checkout from independent processes. The SQLite suite cannot prove row-lock behavior.
+6. Revisit sequence allocation if its counter rows become hot. Range allocation already shortens checkout lock time; database-native sequences or larger allocation blocks are the next step at sustained volume.
+7. Keep discovery caches outside the correctness boundary. Emit post-commit inventory changes and let Catalog converge its caches without weakening the final conditional stock update.
+
+At 100x volume, deterministic lock order and bounded transaction retries remain useful, but operational visibility becomes part of correctness. A rising retry rate should be treated as capacity or query-design feedback, not hidden by increasing retry counts.
+
+## Next steps
+
+- Add payment authorization and capture as explicit idempotent actions and states; do not hold inventory database locks while waiting on a remote payment provider.
+- Add VAT, delivery, discount, and fee fields with immutable calculation inputs copied consistently to orders and invoices.
+- Add focused cancellation, fulfillment, refund, credit-note, and invoice-transition actions with authorization and audit history.
+- Introduce the transactional outbox and make notification delivery idempotent before treating email or integrations as guaranteed.
+- Publish an after-commit inventory event so Catalog can invalidate featured results without coupling a database transaction to a cache write.
+- Add support tooling for inspecting idempotency decisions, failed notifications, retained customer records, and manual recovery without editing rows directly.
+- Keep HTTP and API adapters outside Sales; they must authorize the current actor before calling `CheckoutCart::run()`.
 
 ## Testing
 
@@ -211,3 +233,5 @@ herd composer test
 ```
 
 The suite covers immutable graph creation, inventory and listing-version updates, ownership, self-purchase rejection, idempotency by key and cart, rollback, publication revalidation, stale cart versions, accepted price snapshots, after-commit listener registration, notification references, and buyer-locale delivery.
+
+The remaining verification gap is real multi-process contention on the production database engine. That belongs in a small PostgreSQL or MySQL integration suite plus a load test; adding more SQLite examples would not validate `FOR UPDATE`, deadlock recovery, or cross-worker timing.

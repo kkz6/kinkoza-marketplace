@@ -1,6 +1,6 @@
 # Cart module
 
-`kinkoza/cart` owns the mutable basket domain for the marketplace. It creates one active cart per guest or buyer identity, stores line-item snapshots, enforces single-currency and inventory rules, merges a guest cart after sign-in, calculates totals, and protects mutations with distributed locks, database transactions, row locks, and optimistic versions.
+`kinkoza/cart` owns the mutable basket domain for the marketplace. It creates one active cart per guest or buyer identity, stores line-item snapshots, enforces single-currency and inventory rules, merges a guest cart after sign-in, calculates totals, and protects mutations with cache locks, database transactions, row locks, and optimistic versions.
 
 The module deliberately stops at the cart boundary. Catalog owns listing publication and inventory data, Sales owns checkout, inventory deduction, orders, and invoices, and Storefront owns HTTP/Livewire concerns such as session token creation and current-user authorization.
 
@@ -93,7 +93,7 @@ Both models are fully guarded. The owning actions therefore perform explicit `fo
 
 Sequence allocation is unique and increasing per sequence name. Consumers must not assume sequences are gapless.
 
-## Guest and buyer identity
+## Guest, buyer, and security identity
 
 The Cart actions derive an active identity key rather than trusting a cart ID supplied by a browser:
 
@@ -102,9 +102,9 @@ The Cart actions derive an active identity key rather than trusting a cart ID su
 | Guest | `buyer_id = null`, normalized `guest_token`, `active_key = guest:{token}` |
 | Buyer | `buyer_id = {user ULID}`, `guest_token = null`, `active_key = buyer:{user ULID}` |
 
-Every identity-resolution call requires a lowercase-normalizable, valid ULID guest token. For an authenticated buyer, that token is still required because `getOrCreateFor()` first attempts to restore the visitor's cart. `Kinkoza\Storefront\Support\CartIdentity` is the current session adapter that creates and persists this token; it is not part of Cart itself.
+`GetOrCreateCart::run()` and `AddListingToCart::run()` require a lowercase-normalizable, valid ULID guest token. An authenticated buyer still supplies the session's guest token so the action can restore or merge the cart created before sign-in. `Kinkoza\Storefront\Support\CartIdentity` creates and persists that token; session and authentication concerns remain outside Cart.
 
-When a visitor signs in, `getOrCreateFor($buyer, $guestToken)` behaves as follows:
+When a visitor signs in, `GetOrCreateCart::run($buyer, $guestToken)` behaves as follows:
 
 1. If only a guest cart exists, the same cart is adopted: `buyer_id` and the buyer key are set, `guest_token` is cleared, and the version increments.
 2. If only a buyer cart exists, it is returned.
@@ -114,6 +114,14 @@ When a visitor signs in, `getOrCreateFor($buyer, $guestToken)` behaves as follow
 6. If currencies differ, a referenced listing is no longer published, or a combined quantity exceeds inventory, the merge is refused without modifying either cart; the existing buyer cart is returned.
 
 The non-destructive refusal preserves the guest cart under its guest key rather than silently dropping items. When duplicate listing lines merge successfully, the guest line's title, currency, and unit-price snapshot becomes the combined buyer line's snapshot.
+
+### Security boundary
+
+The module guarantees that identity-based lookup derives `active_key` from the authenticated buyer or normalized guest token, that item mutations verify the item belongs to the supplied cart, and that fresh cart state—and listing state where inventory matters—is checked inside the write transaction. Models are fully guarded, self-purchase is rejected for authenticated buyers, and converted or abandoned carts cannot be mutated through the public actions.
+
+The guest token is a bearer identifier and must remain in a protected server-side session; it should not be accepted from a route parameter or arbitrary request field. Storefront replaces invalid session values, applies CSRF protection, and re-queries carts with the current `buyer_id` or `guest_token` before calling a mutation action.
+
+`UpdateCartItemQuantity` and `RemoveCartItem` deliberately do not accept an actor. They enforce aggregate integrity, not HTTP authorization. Every adapter must scope or authorize the `Cart` before calling them. A future API, CLI, or webhook adapter must repeat that boundary rather than trusting a submitted cart ULID.
 
 ## Public actions
 
@@ -173,9 +181,7 @@ For sign-in restoration, pass both the authenticated user and the same session t
 $cart = GetOrCreateCart::run($buyer, $guestToken);
 ```
 
-`AddListingToCart::run()` permits a `null` expected version for callers that do not yet hold cart state. Once a cart version has been rendered or returned, callers should send it back so stale writes fail explicitly.
-
-`UpdateCartItemQuantity::run()` and `RemoveCartItem::run()` verify that the item belongs to the supplied cart, but they do not receive an actor. The caller must first query or authorize that `Cart` for the current buyer or guest. Storefront does this by re-querying with either `buyer_id` or `guest_token` before invoking the action.
+`AddListingToCart::run()` permits a `null` expected version for callers that do not yet hold cart state. Once a cart version has been rendered or returned, every later write should send it back so stale writes fail explicitly; omitting it should not become the default for an established cart.
 
 Expected domain failures are represented by:
 
@@ -202,7 +208,19 @@ Guest restoration acquires the buyer identity lock before the guest identity loc
 
 The database constraints on `carts.active_key` and `cart_items(cart_id, listing_id)` remain the final race-condition backstop. `createOrFirst()` handles a concurrent active-cart insert that loses the unique-key race.
 
-A production deployment should use a shared atomic lock backend such as Redis and a database engine with real row-level locking. The test environment uses the array cache and in-memory SQLite, so its feature tests verify stale-write and domain behavior but do not simulate independent processes contending on production locks.
+These guarantees assume every application process shares the same lock backend and the database honors row-level locks. They serialize concurrent work for one identity or cart; independent carts remain available for parallel processing. Optimistic versions still reject a client that submits state rendered before another successful mutation.
+
+### Test and local limitations
+
+The feature suite uses the array cache and in-memory SQLite. Array locks coordinate only code running inside the same PHP process, and SQLite does not reproduce MySQL or PostgreSQL row-lock, deadlock, or lock-wait behavior. The tests therefore verify domain branches, transaction rollback, unique constraints, stale versions, and deterministic merge behavior, but they do not prove correctness under competing workers.
+
+Local SQLite is appropriate for fast feedback, not for signing off production contention. Before release, the same scenarios must run as multi-process integration tests against the selected production database and Redis, including simultaneous first-cart creation, duplicate adds, guest adoption, merge conflicts, stale updates, and lock timeouts.
+
+### Production topology
+
+Production should use Redis as a shared atomic cache/lock store and MySQL or PostgreSQL with a transactional storage engine and real row-level locking. All application workers must share the same Redis namespace and primary database. Mutable cart reads and writes must stay on the primary; replicas are suitable only for lag-tolerant reporting or historical reads.
+
+Lock lease and wait values should be tuned from measured transaction latency rather than increased blindly. Monitor acquisition time, timeout count, database retries, stale-version failures, unique-constraint races, and non-destructive merge refusals. A lock timeout is an infrastructure failure and should be reported with cart/identity context without logging the raw guest token.
 
 ### Optimistic versions
 
@@ -244,7 +262,37 @@ new active cart (version 1)
 
 Converted and abandoned carts remain as historical records but cannot be mutated through the public Cart actions.
 
-## Extension points
+## Deliberate exclusions
+
+- A cart checks current availability but does not reserve or decrement inventory. Sales is the only allocation boundary.
+- Tax, VAT, shipping, discounts, promotions, deposits, and payment fees are not represented; totals equal the subtotal.
+- Cart does not own HTTP routes, sessions, authentication, translated UI errors, checkout, orders, invoices, payments, or fulfillment.
+- There is no scheduled expiry or deletion of abandoned guest carts and no user-facing saved-cart workflow.
+- Cart emits no lifecycle events and has no transactional outbox. No downstream integration should infer a committed fact from an in-progress mutation.
+- Cross-currency carts and automatic currency conversion are intentionally rejected rather than priced with an implicit exchange rate.
+
+## Evolution at 100x traffic
+
+The current design scales horizontally across different carts because lock keys are identity- or cart-specific. A single hot cart remains intentionally serialized: allowing concurrent writers to the same aggregate would weaken totals and version guarantees.
+
+At 100 times the proof-of-concept traffic, evolve the module in this order:
+
+1. Run Redis and the production database as managed, observable services; load-test the real topology with many PHP workers and failure injection before changing the locking model.
+2. Measure active-cart lookup, cart-item lookup, lock wait, retry, and stale-write rates. Use query plans to validate the existing unique/index paths before adding indexes based on observed workload.
+3. Add an idempotency key to externally retried cart mutation commands so network retries cannot double-apply an add after the caller loses the response.
+4. Archive or partition old converted and abandoned carts according to retention requirements, keeping the active-cart working set and its indexes small. Historical/reporting queries can then move away from the primary write path.
+5. Add an idempotent abandoned-guest-cart cleanup action and schedule it in bounded batches. It must use the same cart lock before changing or deleting an aggregate.
+6. Publish metrics and alerts for contention, failed locks, database retries, merge refusal, and mutation latency. Multi-region writes would additionally require a single owner region per cart or a redesigned consistency model; shared Redis alone is not sufficient.
+
+## Prioritized next steps
+
+1. Add the Redis plus MySQL/PostgreSQL multi-process contention suite; this is the production-readiness gate for the existing design.
+2. Add mutation idempotency and structured lock/retry metrics so safe retry behavior is observable.
+3. Define abandoned-cart retention and implement the locked cleanup action.
+4. Introduce an explicit pricing model only when tax, discounts, or shipping enter scope, and copy the same accepted values into Sales snapshots.
+5. Evaluate inventory reservation only after defining expiry, release, checkout, and failure semantics across Cart, Catalog, and Sales.
+
+## Extension rules
 
 - Add a focused action under `src/Actions` for each new public use case. Give it a typed `handle(...)` method and test callers through `ActionName::run(...)`.
 - Keep each use case's business logic in its owning action. Extract only genuinely shared cart mechanics to a focused concern under `src/Actions/Concerns`.
@@ -252,8 +300,8 @@ Converted and abandoned carts remain as historical records but cannot be mutated
 - Laravel Actions can be faked with helpers such as `AddListingToCart::shouldRun()` when a presentation test needs to isolate orchestration from domain work.
 - Add new domain failures under `src/Exceptions` and map safe user-facing text in Storefront's `DomainErrorMessage`.
 - Extending totals with discounts, tax, or shipping requires explicit schema and action changes plus matching Sales checkout semantics. `recalculate()` is private and currently supports subtotal-only totals; it is not an overridable pricing hook.
-- Inventory reservation would be a new cross-module workflow. The current actions perform availability checks only; checkout remains the deduction boundary.
-- Cart emits no domain events today. Add events deliberately at committed lifecycle points if downstream integrations require them.
+- Inventory reservation is a cross-module workflow. The current actions perform availability checks only; checkout remains the deduction boundary.
+- Add events only for stable, committed lifecycle facts. Use an outbox if delivery guarantees are required beyond the local transaction.
 - Add lifecycle values only with matching migration/default, action, factory, checkout, and test updates.
 
 ## Testing
