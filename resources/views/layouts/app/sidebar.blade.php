@@ -11,9 +11,18 @@
             </flux:sidebar.header>
 
             <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Platform')" class="grid">
+                <flux:sidebar.group :heading="__('Marketplace')" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="magnifying-glass" :href="route('home')" :current="request()->routeIs('home')" wire:navigate>
+                        {{ __('Browse assets') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="plus" :href="route('storefront.listings.create')" :current="request()->routeIs('storefront.listings.create')" wire:navigate>
+                        {{ __('Sell an asset') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="shopping-bag" :href="route('storefront.cart.show')" :current="request()->routeIs('storefront.cart.show')" wire:navigate>
+                        {{ __('Cart') }}
                     </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
@@ -21,12 +30,11 @@
             <flux:spacer />
 
             <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
+                <flux:sidebar.item icon="user-circle" :href="route('profile.edit')" :current="request()->routeIs('profile.edit')" wire:navigate>
+                    {{ __('Profile') }}
                 </flux:sidebar.item>
-
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
+                <flux:sidebar.item icon="shield-check" :href="route('security.edit')" :current="request()->routeIs('security.edit')" wire:navigate>
+                    {{ __('Security') }}
                 </flux:sidebar.item>
             </flux:sidebar.nav>
 

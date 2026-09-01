@@ -56,7 +56,7 @@ The Laravel host owns authentication, users, locale middleware, framework config
 | [`catalog`](app-modules/catalog/README.md) | Listings, publication rules, seller policy, categories, currencies, countries, and catalog caching | Host user model |
 | [`cart`](app-modules/cart/README.md) | Guest and buyer identity, line snapshots, totals, optimistic versions, and mutation locks | Catalog |
 | [`sales`](app-modules/sales/README.md) | Checkout, inventory allocation, orders, invoices, events, and confirmation notifications | Cart and Catalog |
-| [`storefront`](app-modules/storefront/README.md) | Routes, Livewire pages, form validation, locale switching, contact reveal, and request boundaries | Catalog, Cart, and Sales |
+| [`storefront`](app-modules/storefront/README.md) | Routes, Livewire pages, account dashboard, form validation, locale switching, contact reveal, and request boundaries | Catalog, Cart, and Sales |
 
 Dependency direction is one-way:
 

@@ -38,6 +38,7 @@ tests/Feature/                End-to-end presentation boundary tests
 | --- | --- | --- | --- |
 | `GET` | `/` | `home` | Public; 120 requests/minute per account or IP |
 | `POST` | `/locale/{locale}` | `locale.update` | Public; supported locales only; 30 requests/minute |
+| `GET` | `/dashboard` | `dashboard` | Authenticated and email verified; account-owned activity only |
 | `GET` | `/listings/{slug}` | `storefront.listings.show` | Public when published; sellers may view their own non-public listing; 30 requests/minute |
 | `GET` | `/cart` | `storefront.cart.show` | Public; 30 requests/minute |
 | `GET` | `/sell` | `storefront.listings.create` | Authenticated and email verified; 30 requests/minute |
@@ -63,6 +64,10 @@ Storefront calls domain use cases through Laravel Actions. A synchronous call su
 `Kinkoza\Storefront\Actions\UpdateLocale` is mounted directly as the `POST /locale/{locale}` route handler. Laravel invokes its `handle(Request, string): RedirectResponse` method through the action's invokable-controller adapter. `RevealSellerContact` is a synchronous action invoked with `::run(...)` so authorization, throttling, and audit logging remain one reusable boundary.
 
 ## Page components
+
+### `AccountDashboard`
+
+Provides the verified user's authenticated marketplace workspace. `GetAccountDashboard::make()->handle(...)` builds an account-scoped read model covering active and pending listings, cart quantity, purchases, seller order count, units sold, recent orders, recent listings, and business-profile readiness. The component does not accept user IDs from the browser; it resolves the authenticated user on every render.
 
 ### `ListingsIndex`
 

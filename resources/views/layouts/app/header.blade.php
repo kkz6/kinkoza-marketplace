@@ -13,31 +13,19 @@
                 <flux:navbar.item icon="layout-grid" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                     {{ __('Dashboard') }}
                 </flux:navbar.item>
+                <flux:navbar.item icon="magnifying-glass" :href="route('home')" wire:navigate>
+                    {{ __('Browse assets') }}
+                </flux:navbar.item>
+                <flux:navbar.item icon="plus" :href="route('storefront.listings.create')" wire:navigate>
+                    {{ __('Sell an asset') }}
+                </flux:navbar.item>
             </flux:navbar>
 
             <flux:spacer />
 
             <flux:navbar class="me-1.5 space-x-0.5 rtl:space-x-reverse py-0!">
-                <flux:tooltip :content="__('Search')" position="bottom">
-                    <flux:navbar.item class="!h-10 [&>div>svg]:size-5" icon="magnifying-glass" href="#" :label="__('Search')" />
-                </flux:tooltip>
-                <flux:tooltip :content="__('Repository')" position="bottom">
-                    <flux:navbar.item
-                        class="h-10 max-lg:hidden [&>div>svg]:size-5"
-                        icon="folder-git-2"
-                        href="https://github.com/laravel/livewire-starter-kit"
-                        target="_blank"
-                        :label="__('Repository')"
-                    />
-                </flux:tooltip>
-                <flux:tooltip :content="__('Documentation')" position="bottom">
-                    <flux:navbar.item
-                        class="h-10 max-lg:hidden [&>div>svg]:size-5"
-                        icon="book-open-text"
-                        href="https://laravel.com/docs/starter-kits#livewire"
-                        target="_blank"
-                        :label="__('Documentation')"
-                    />
+                <flux:tooltip :content="__('Cart')" position="bottom">
+                    <flux:navbar.item class="!h-10 [&>div>svg]:size-5" icon="shopping-bag" :href="route('storefront.cart.show')" :label="__('Cart')" wire:navigate />
                 </flux:tooltip>
             </flux:navbar>
 
@@ -52,22 +40,21 @@
             </flux:sidebar.header>
 
             <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Platform')">
+                <flux:sidebar.group :heading="__('Marketplace')">
                     <flux:sidebar.item icon="layout-grid" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard')  }}
                     </flux:sidebar.item>
+                    <flux:sidebar.item icon="magnifying-glass" :href="route('home')" wire:navigate>{{ __('Browse assets') }}</flux:sidebar.item>
+                    <flux:sidebar.item icon="plus" :href="route('storefront.listings.create')" wire:navigate>{{ __('Sell an asset') }}</flux:sidebar.item>
+                    <flux:sidebar.item icon="shopping-bag" :href="route('storefront.cart.show')" wire:navigate>{{ __('Cart') }}</flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
             <flux:spacer />
 
             <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
-                </flux:sidebar.item>
+                <flux:sidebar.item icon="user-circle" :href="route('profile.edit')" wire:navigate>{{ __('Profile') }}</flux:sidebar.item>
+                <flux:sidebar.item icon="shield-check" :href="route('security.edit')" wire:navigate>{{ __('Security') }}</flux:sidebar.item>
             </flux:sidebar.nav>
         </flux:sidebar>
 
