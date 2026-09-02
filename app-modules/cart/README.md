@@ -18,7 +18,7 @@ App shared kernel                  Catalog
 
 Cart declares `kinkoza/catalog` as a package dependency and uses the host application's `User`, `HasUlidAndSequence`, and `SequenceGenerator`. Catalog and the shared kernel do not depend on Cart. Sales and Storefront consume Cart; Cart does not call either consumer.
 
-The Composer path package is discovered through `Kinkoza\Cart\Providers\CartServiceProvider`. Public use cases and their business logic live in Laravel Action classes, so the provider needs no workflow binding. `routes/cart-routes.php` is intentionally empty because Cart exposes PHP actions rather than an HTTP API.
+The Composer path package is discovered through `Kinkoza\Cart\Providers\CartServiceProvider`. Public use cases and their business logic live in Laravel Action classes, so the provider needs no workflow binding. The convention-loaded `routes/cart-routes.php` presentation adapter maps the cart URL to its Storefront Livewire component.
 
 ## Directory map
 
@@ -26,7 +26,7 @@ The Composer path package is discovered through `Kinkoza\Cart\Providers\CartServ
 composer.json                    Package metadata and Catalog dependency
 database/factories/              Cart and cart-item test factories
 database/migrations/             carts and cart_items tables
-routes/cart-routes.php           Empty HTTP adapter placeholder
+routes/cart-routes.php           Cart presentation route
 src/Actions/                      Public Laravel Action entry points
 src/Enums/                       Cart lifecycle status
 src/Exceptions/                  Expected cart-domain failures

@@ -26,10 +26,7 @@ resources/views/
 routes/
 ├── storefront-routes.php     Convention-loaded route manifest
 ├── account-routes.php        Account workspace routes
-├── cart-routes.php           Cart routes
-├── catalog-routes.php        Discovery and listing routes
-├── locale-routes.php         Locale preference routes
-└── sales-routes.php          Checkout and order routes
+└── locale-routes.php         Locale preference routes
 src/Actions/                  Presentation actions and route adapters
 src/Http/Livewire/            Page components
 src/Http/Livewire/Forms/      Listing form validation and DTO mapping
@@ -40,7 +37,7 @@ tests/Feature/                End-to-end presentation boundary tests
 
 ## Routes
 
-`internachi/modular` discovers `routes/storefront-routes.php`. That manifest requires the smaller concern-specific route files above. Marketplace routes therefore remain owned by the Storefront presentation module, while each route group is maintained independently and domain packages remain unaware of HTTP or Livewire classes. The host `routes/web.php` only loads host-owned account settings routes.
+`internachi/modular` discovers each package's conventional route file. Catalog owns listing URLs, Cart owns the cart URL, Sales owns checkout and order URLs, and Storefront owns the cross-domain account dashboard and locale preference URLs. These route files are thin presentation adapters; business behavior remains in actions and Livewire components. The host `routes/web.php` only loads host-owned account settings routes.
 
 | Method | URI | Name | Access and limit |
 | --- | --- | --- | --- |

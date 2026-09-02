@@ -19,14 +19,14 @@ Sales declares Cart, Catalog, and Laravel Actions 2.12 as Composer dependencies 
 
 Laravel discovers `Kinkoza\Sales\Providers\SalesServiceProvider`, which connects `OrderPlaced` to the queued `SendOrderConfirmation` action. Checkout needs no container binding: Laravel Actions resolves `CheckoutCart`, and the action owns the complete transactional workflow.
 
-`routes/sales-routes.php` is intentionally empty. The package exposes application actions rather than an HTTP API.
+The convention-loaded `routes/sales-routes.php` presentation adapter maps checkout and order-confirmation URLs to Storefront Livewire components. Sales business workflows remain exposed through application actions.
 
 ## Directory map
 
 ```text
 database/factories/              Order and invoice graph factories
 database/migrations/             Orders, order items, invoices, invoice items
-routes/sales-routes.php          Empty HTTP adapter placeholder
+routes/sales-routes.php          Checkout and order presentation routes
 src/Actions/                     Checkout and queued listener actions
 src/Enums/                       Order and invoice lifecycle values
 src/Events/                      Committed sales facts

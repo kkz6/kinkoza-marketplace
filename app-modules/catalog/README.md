@@ -18,7 +18,7 @@ Dependencies point toward Catalog:
 - Sales consumes `Listing` and `Currency` during checkout and inventory reduction.
 - Storefront consumes Catalog's model, enums, policy, DTO, and creation action.
 
-Catalog must remain unaware of Cart, Sales, and Storefront. Its `routes/catalog-routes.php` file is currently empty, and `CatalogServiceProvider` does not register routes or views.
+Catalog business code remains unaware of Cart, Sales, and Storefront. Its convention-loaded `routes/catalog-routes.php` presentation adapter maps listing discovery and creation URLs to the Storefront Livewire components without moving UI behavior into the domain.
 
 ## Directory map
 
@@ -29,7 +29,7 @@ catalog/
 │   ├── factories/ListingFactory.php
 │   ├── migrations/*_create_listings_table.php
 │   └── seeders/ListingSeeder.php
-├── routes/catalog-routes.php
+├── routes/catalog-routes.php          Listing discovery and creation routes
 ├── src/
 │   ├── Actions/CreateListing.php
 │   ├── Data/CreateListingData.php
